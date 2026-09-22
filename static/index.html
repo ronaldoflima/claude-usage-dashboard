@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude · Ritmo de Uso</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">CLAUDE CODE · LOCAL</p>
+        <h1>Ritmo de Uso</h1>
+        <p class="subtitle">Limites oficiais e atividade local, sem ler o conteúdo das conversas.</p>
+      </div>
+      <div class="status"><span class="pulse"></span><span id="updated">carregando…</span></div>
+    </header>
+
+    <section class="controls panel">
+      <div class="presets" id="presets">
+        <button data-range="15m">15 min</button><button data-range="30m">30 min</button>
+        <button data-range="1h">1 hora</button><button class="active" data-range="5h">5 horas</button>
+        <button data-range="24h">24 horas</button><button data-range="7d">7 dias</button>
+      </div>
+      <div class="custom-range">
+        <label>De <input id="fromInput" type="datetime-local"></label>
+        <label>Até <input id="toInput" type="datetime-local"></label>
+        <button id="applyCustom">Aplicar</button>
+      </div>
+    </section>
+
+    <section id="limits" class="limit-grid" aria-label="Limites do plano"></section>
+
+    <section class="panel weekly-curve-panel">
+      <div class="section-head">
+        <div><p class="eyebrow">RITMO SEMANAL</p><h2>Curva esperada × uso desta semana</h2></div>
+        <span id="weeklyCurveSummary" class="curve-summary"></span>
+      </div>
+      <div class="curve-legend">
+        <span><i class="expected-dot"></i>Curva pessoal esperada</span>
+        <span><i class="actual-dot"></i>Uso estimado da semana</span>
+        <span><i class="now-dot"></i>Percentual oficial agora</span>
+      </div>
+      <div id="weeklyCurve" class="weekly-curve" role="img" aria-label="Curva acumulada de uso semanal"></div>
+      <p class="curve-note">A curva pessoal usa somente ciclos encerrados. A linha atual vem dos tokens locais e é calibrada pelo percentual oficial mais recente.</p>
+    </section>
+
+    <section class="metric-grid">
+      <article class="metric panel"><span>Tokens processados</span><strong id="totalTokens">—</strong><small>inclui leituras de cache</small></article>
+      <article class="metric panel"><span>Tokens novos</span><strong id="freshTokens">—</strong><small>entrada + saída + cache criado</small></article>
+      <article class="metric panel"><span>Sessões ativas</span><strong id="sessions">—</strong><small>no intervalo selecionado</small></article>
+      <article class="metric panel"><span>Respostas</span><strong id="messages">—</strong><small>mensagens únicas do assistente</small></article>
+    </section>
+
+    <section class="panel chart-panel">
+      <div class="section-head">
+        <div><p class="eyebrow">LINHA DO TEMPO</p><h2>Intensidade por modelo</h2></div>
+        <select id="metricSelect" aria-label="Métrica do gráfico">
+          <option value="total_tokens">Tokens processados</option>
+          <option value="fresh_tokens">Tokens novos</option>
+          <option value="output_tokens">Saída</option>
+          <option value="thinking_tokens">Thinking</option>
+        </select>
+      </div>
+      <div id="legend" class="legend"></div>
+      <div id="timeline" class="timeline"></div>
+    </section>
+
+    <section class="split">
+      <article class="panel ranking">
+        <div class="section-head"><div><p class="eyebrow">MODELOS</p><h2>Quem mais consumiu</h2></div></div>
+        <div id="models"></div>
+      </article>
+      <article class="panel ranking">
+        <div class="section-head"><div><p class="eyebrow">SESSÕES</p><h2>Onde o usage foi gasto</h2></div></div>
+        <div id="sessionList"></div>
+      </article>
+    </section>
+
+    <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth Usage</span><span id="coverage"></span></footer>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
