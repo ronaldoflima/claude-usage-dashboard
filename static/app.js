@@ -1,5 +1,11 @@
-const state = { range: '5h', custom: null, data: null, limits: null, profile: null, weeklyData: null, metric: 'total_tokens' };
+const state = { range: '5h', custom: null, data: null, limits: null, profile: null, weeklyData: null };
 const COLORS = ['#d97757', '#7c9ec7', '#7dbb84', '#dfae57', '#a184c4', '#d7809e', '#79b7b1'];
+const TOKEN_COMPONENTS = [
+  { key: 'input_tokens', label: 'Input', color: '#7c9ec7' },
+  { key: 'output_tokens', label: 'Output', color: '#7dbb84' },
+  { key: 'cache_creation_tokens', label: 'Escrita em cache', color: '#d97757' },
+  { key: 'cache_read_tokens', label: 'Leitura de cache', color: '#a184c4' },
+];
 const DURATIONS = { '15m': 15 * 60e3, '30m': 30 * 60e3, '1h': 60 * 60e3, '5h': 5 * 60 * 60e3, '24h': 24 * 60 * 60e3, '7d': 7 * 24 * 60 * 60e3 };
 const nf = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 const exact = new Intl.NumberFormat('pt-BR');
@@ -103,6 +109,11 @@ function render() {
   const d = state.data, t = d.totals;
   document.getElementById('totalTokens').textContent = formatTokens(t.total_tokens);
   document.getElementById('freshTokens').textContent = formatTokens(t.fresh_tokens);
+  document.getElementById('inputTokens').textContent = formatTokens(t.input_tokens);
+  document.getElementById('outputTokens').textContent = formatTokens(t.output_tokens);
+  document.getElementById('cacheCreationTokens').textContent = formatTokens(t.cache_creation_tokens);
+  document.getElementById('cacheReadTokens').textContent = formatTokens(t.cache_read_tokens);
+  document.getElementById('thinkingTokens').textContent = formatTokens(t.thinking_tokens);
   document.getElementById('sessions').textContent = exact.format(t.sessions || 0);
   document.getElementById('messages').textContent = exact.format(t.messages || 0);
   document.getElementById('coverage').textContent = d.coverage.last_event_ms ? `último evento ${formatDate(d.coverage.last_event_ms)}` : 'sem eventos';
@@ -209,40 +220,49 @@ function renderWeeklyCurve() {
 
 function renderTimeline() {
   const timeline = document.getElementById('timeline'); const legend = document.getElementById('legend');
-  const rows = state.data.timeline; const metric = state.metric;
+  const rows = state.data.timeline;
   const oldAxis = timeline.parentElement.querySelector('.axis'); if (oldAxis) oldAxis.remove();
   if (!rows.length) { timeline.innerHTML = '<div class="empty">Sem atividade neste intervalo.</div>'; legend.innerHTML = ''; return; }
-  const models = [...new Set(rows.map(x => x.model))]; const colors = Object.fromEntries(models.map((m, i) => [m, COLORS[i % COLORS.length]]));
-  legend.innerHTML = models.map(m => `<span><i style="background:${colors[m]}"></i>${esc(shortModel(m))}</span>`).join('');
+  legend.innerHTML = TOKEN_COMPONENTS.map(metric => `<span><i style="background:${metric.color}"></i>${metric.label}</span>`).join('');
   const byBucket = new Map();
-  for (const row of rows) { if (!byBucket.has(row.bucket_ms)) byBucket.set(row.bucket_ms, []); byBucket.get(row.bucket_ms).push(row); }
-  const buckets = [...byBucket.entries()]; const max = Math.max(...buckets.map(([, values]) => values.reduce((sum, x) => sum + x[metric], 0)), 1);
-  timeline.innerHTML = buckets.map(([bucket, values]) => `<div class="column" title="${formatDate(bucket)} · ${formatTokens(values.reduce((s,x)=>s+x[metric],0))}">
-    ${values.map(x => `<i class="segment" style="height:${Math.max(.4, x[metric] / max * 100)}%;background:${colors[x.model]}" title="${esc(shortModel(x.model))}: ${exact.format(x[metric])}"></i>`).join('')}
+  for (const row of rows) {
+    if (!byBucket.has(row.bucket_ms)) byBucket.set(row.bucket_ms, Object.fromEntries(TOKEN_COMPONENTS.map(metric => [metric.key, 0])));
+    const bucket = byBucket.get(row.bucket_ms);
+    for (const metric of TOKEN_COMPONENTS) bucket[metric.key] += row[metric.key] || 0;
+  }
+  const buckets = [...byBucket.entries()];
+  const bucketTotal = values => TOKEN_COMPONENTS.reduce((sum, metric) => sum + values[metric.key], 0);
+  const max = Math.max(...buckets.map(([, values]) => bucketTotal(values)), 1);
+  timeline.innerHTML = buckets.map(([bucket, values]) => `<div class="column" title="${formatDate(bucket)} · ${formatTokens(bucketTotal(values))} processados">
+    ${TOKEN_COMPONENTS.map(metric => `<i class="segment" style="height:${values[metric.key] / max * 100}%;background:${metric.color}" title="${metric.label}: ${exact.format(values[metric.key])}"></i>`).join('')}
   </div>`).join('');
   timeline.insertAdjacentHTML('afterend', `<div class="axis"><span>${formatDate(buckets[0][0])}</span><span>${formatDate(buckets.at(-1)[0])}</span></div>`);
 }
 
 function renderRanking(id, rows, type) {
-  const root = document.getElementById(id); const metric = state.metric; const max = Math.max(...rows.map(x => x[metric]), 1);
+  const root = document.getElementById(id); const max = Math.max(...rows.map(x => x.total_tokens), 1);
   root.innerHTML = rows.slice(0, type === 'model' ? 8 : 12).map((row, i) => {
     const name = type === 'model' ? shortModel(row.model) : row.project;
     const detail = type === 'model' ? `${exact.format(row.messages)} respostas` : `${row.session_id.slice(0, 8)} · ${exact.format(row.messages)} respostas`;
-    return `<div class="rank-row"><div class="rank-name"><strong>${i + 1}. ${esc(name)}</strong><small title="${esc(type === 'session' ? row.cwd : row.model)}">${esc(detail)}</small></div>
-      <div class="mini-bar"><i style="--value:${row[metric] / max * 100}%;background:${COLORS[i % COLORS.length]}"></i></div>
-      <div class="rank-value">${formatTokens(row[metric])}<small>${metricLabel(metric)}</small></div></div>`;
+    const values = [
+      ['Base perfil', row.fresh_tokens], ['Input', row.input_tokens], ['Output', row.output_tokens],
+      ['Cache escrito', row.cache_creation_tokens], ['Cache lido', row.cache_read_tokens], ['Thinking', row.thinking_tokens],
+    ];
+    return `<div class="rank-row">
+      <div class="rank-summary"><div class="rank-name"><strong>${i + 1}. ${esc(name)}</strong><small title="${esc(type === 'session' ? row.cwd : row.model)}">${esc(detail)}</small></div><div class="rank-value">${formatTokens(row.total_tokens)}<small>processados</small></div></div>
+      <div class="mini-bar"><i style="--value:${row.total_tokens / max * 100}%;background:${COLORS[i % COLORS.length]}"></i></div>
+      <div class="metric-breakdown">${values.map(([label, value]) => `<span title="${label}: ${exact.format(value || 0)}"><small>${label}</small><strong>${formatTokens(value)}</strong></span>`).join('')}</div>
+    </div>`;
   }).join('') || '<div class="empty">Sem dados.</div>';
 }
 
 function shortModel(model) { return model.replace(/^claude-/, '').replace(/-\d{8}$/, ''); }
-function metricLabel(metric) { return ({ total_tokens: 'processados', fresh_tokens: 'novos', output_tokens: 'saída', thinking_tokens: 'thinking' })[metric]; }
 function localInputValue(timestamp) { const d = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); }
 
 document.getElementById('presets').addEventListener('click', event => {
   const button = event.target.closest('[data-range]'); if (!button) return;
   state.range = button.dataset.range; state.custom = null; document.querySelectorAll('[data-range]').forEach(x => x.classList.toggle('active', x === button)); load();
 });
-document.getElementById('metricSelect').addEventListener('change', event => { state.metric = event.target.value; renderTimeline(); renderRanking('models', state.data.models, 'model'); renderRanking('sessionList', state.data.sessions, 'session'); });
 document.getElementById('applyCustom').addEventListener('click', () => {
   const start = new Date(document.getElementById('fromInput').value).getTime(); const end = new Date(document.getElementById('toInput').value).getTime();
   if (Number.isFinite(start) && Number.isFinite(end) && start < end) { document.querySelectorAll('[data-range]').forEach(x => x.classList.remove('active')); load({ start, end }); }

@@ -37,6 +37,8 @@ class UsageIndexTest(unittest.TestCase):
         result = self.index.dashboard(0, 2_000_000_000_000, 60_000)
         self.assertEqual(result["totals"]["messages"], 1)
         self.assertEqual(result["totals"]["output_tokens"], 30)
+        self.assertEqual(result["totals"]["thinking_tokens"], 5)
+        self.assertEqual(result["totals"]["fresh_tokens"], 60)
         self.assertEqual(result["totals"]["total_tokens"], 160)
 
     def test_incremental_refresh(self):

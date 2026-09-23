@@ -46,22 +46,27 @@
       <p class="curve-note">A curva pessoal usa somente ciclos encerrados. A linha atual vem dos tokens locais e é calibrada pelo percentual oficial mais recente.</p>
     </section>
 
-    <section class="metric-grid">
-      <article class="metric panel"><span>Tokens processados</span><strong id="totalTokens">—</strong><small>inclui leituras de cache</small></article>
-      <article class="metric panel"><span>Tokens novos</span><strong id="freshTokens">—</strong><small>entrada + saída + cache criado</small></article>
-      <article class="metric panel"><span>Sessões ativas</span><strong id="sessions">—</strong><small>no intervalo selecionado</small></article>
-      <article class="metric panel"><span>Respostas</span><strong id="messages">—</strong><small>mensagens únicas do assistente</small></article>
+    <section class="metrics-section" aria-labelledby="metricsTitle">
+      <div class="section-head metrics-head">
+        <div><p class="eyebrow">ATIVIDADE LOCAL</p><h2 id="metricsTitle">O que os contadores significam</h2></div>
+        <p class="metrics-disclaimer">Estes tokens explicam a atividade local, não a porcentagem oficial da cota.</p>
+      </div>
+      <div class="metric-grid">
+        <article class="metric panel primary-metric"><span>Base do perfil</span><strong id="freshTokens">—</strong><small>input + output + escrita em cache</small></article>
+        <article class="metric panel"><span>Volume processado</span><strong id="totalTokens">—</strong><small>base do perfil + leituras de cache</small></article>
+        <article class="metric panel"><span>Input</span><strong id="inputTokens">—</strong><small>entrada nova, fora do cache</small></article>
+        <article class="metric panel"><span>Output</span><strong id="outputTokens">—</strong><small>tokens gerados pelo modelo</small></article>
+        <article class="metric panel"><span>Escrita em cache</span><strong id="cacheCreationTokens">—</strong><small>contexto gravado para reutilização</small></article>
+        <article class="metric panel"><span>Leitura de cache</span><strong id="cacheReadTokens">—</strong><small>contexto reaproveitado do cache</small></article>
+        <article class="metric panel"><span>Thinking</span><strong id="thinkingTokens">—</strong><small>parte do output; não somar novamente</small></article>
+      </div>
+      <div class="activity-counts"><span><strong id="sessions">—</strong> sessões ativas</span><span><strong id="messages">—</strong> respostas únicas</span><span>no intervalo selecionado</span></div>
     </section>
 
     <section class="panel chart-panel">
       <div class="section-head">
-        <div><p class="eyebrow">LINHA DO TEMPO</p><h2>Intensidade por modelo</h2></div>
-        <select id="metricSelect" aria-label="Métrica do gráfico">
-          <option value="total_tokens">Tokens processados</option>
-          <option value="fresh_tokens">Tokens novos</option>
-          <option value="output_tokens">Saída</option>
-          <option value="thinking_tokens">Thinking</option>
-        </select>
+        <div><p class="eyebrow">LINHA DO TEMPO</p><h2>Composição da atividade</h2></div>
+        <p class="chart-note">As quatro parcelas são exibidas juntas. Thinking já está contido em output.</p>
       </div>
       <div id="legend" class="legend"></div>
       <div id="timeline" class="timeline"></div>
@@ -69,11 +74,11 @@
 
     <section class="split">
       <article class="panel ranking">
-        <div class="section-head"><div><p class="eyebrow">MODELOS</p><h2>Quem mais consumiu</h2></div></div>
+        <div class="section-head"><div><p class="eyebrow">MODELOS</p><h2>Volume por modelo</h2></div></div>
         <div id="models"></div>
       </article>
       <article class="panel ranking">
-        <div class="section-head"><div><p class="eyebrow">SESSÕES</p><h2>Onde o usage foi gasto</h2></div></div>
+        <div class="section-head"><div><p class="eyebrow">SESSÕES</p><h2>Volume por sessão</h2></div></div>
         <div id="sessionList"></div>
       </article>
     </section>

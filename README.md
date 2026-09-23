@@ -1,73 +1,96 @@
-# Claude · Ritmo de Uso
+# Claude Usage Dashboard
 
-Dashboard local para acompanhar os limites do plano Claude e entender quais
-sessões/modelos concentraram o uso em um intervalo de tempo.
+A local dashboard for monitoring Claude plan limits and understanding which
+sessions and models account for activity over a selected time range.
 
-## O que ele lê
+## What it reads
 
-- `~/.claude/projects/**/*.jsonl`: somente metadados, timestamps, modelo e
-  contadores de tokens. Prompts, respostas e chamadas de ferramentas não são
-  persistidos nem enviados ao navegador.
-- `~/.claude/.credentials.json`: o token OAuth fica no processo local e é usado
-  exclusivamente para consultar `https://api.anthropic.com/api/oauth/usage`.
-  O token nunca aparece na resposta HTTP do dashboard.
+- `~/.claude/projects/**/*.jsonl`: metadata, timestamps, model names, and token
+  counters only. Prompts, responses, and tool calls are neither persisted by
+  the dashboard nor sent to the browser.
+- `~/.claude/.credentials.json`: the OAuth token stays in the local server
+  process and is used exclusively to request
+  `https://api.anthropic.com/api/oauth/usage`. The token is never included in
+  the dashboard's HTTP responses.
 
-O percentual do plano e os horários de reset são dados oficiais retornados pela
-Anthropic. Os rankings locais mostram volume de tokens e não devem ser
-interpretados como uma decomposição exata do percentual do plano: a ponderação
-interna da cota não é pública.
+Plan utilization and reset times are official values returned by Anthropic.
+The local token counters are diagnostic activity measurements; they are not an
+exact breakdown of plan utilization because Anthropic does not publish the
+quota weighting formula.
 
-## Rodar
+## Run locally
 
-Requer apenas Python 3.10+ e não instala dependências.
+The dashboard requires Python 3.10+ and has no third-party dependencies.
 
 ```bash
 python3 app.py
 ```
 
-Abra <http://127.0.0.1:8787>. Na primeira carga, a indexação do histórico pode
-levar alguns segundos; depois, somente bytes novos dos JSONL são processados.
+Open <http://127.0.0.1:8787>. The first load may take a few seconds while the
+history is indexed. Later refreshes process only new JSONL bytes.
 
-Opções:
+Options:
 
 ```bash
 python3 app.py --port 9000
-python3 app.py --claude-dir /outro/caminho/.claude
+python3 app.py --claude-dir /another/path/.claude
 ```
 
-Por segurança, o padrão escuta apenas em `127.0.0.1`. Não exponha o servidor na
-rede sem adicionar autenticação.
+For safety, the server binds to `127.0.0.1` by default. Do not expose it to a
+network without adding authentication.
 
-## Segurança e privacidade
+## Security and privacy
 
-- O banco SQLite, o perfil gerado, caches e arquivos de ambiente são ignorados
-  pelo Git.
-- O token OAuth é lido em memória e enviado somente para `api.anthropic.com`.
-- O endpoint OAuth de usage é interno e não documentado; ele pode mudar sem
-  aviso. O dashboard mostra um estado de erro sem expor a credencial.
-- Revise o código antes de alterar o bind para um endereço de rede.
+- The SQLite database, generated profile, caches, and environment files are
+  ignored by Git.
+- The OAuth token is read into memory and sent only to `api.anthropic.com`.
+- The OAuth usage endpoint is internal and undocumented, so it may change
+  without notice. The dashboard reports failures without exposing credentials.
+- Review the code before changing the bind address to a network interface.
 
-## Perfil histórico de ritmo
+## Historical pace profile
 
-Gere ou atualize a curva pessoal com:
+Generate or refresh the personal usage curve with:
 
 ```bash
 python3 build_usage_profile.py
 ```
 
-O script agrega 90 dias de ciclos já encerrados em 168 faixas horárias,
-alinhadas ao reset de sábado às 19h em `America/Sao_Paulo`. O ciclo atual é
-excluído integralmente para não contaminar a referência. Semanas recentes têm
-mais peso (meia-vida de 28 dias). O JSON agregado fica em `.cache/usage-profile.json`; nenhum conteúdo
-de conversa, nome de projeto ou identificador de sessão é incluído.
+The script aggregates up to 90 days of completed cycles into 168 hourly slots,
+aligned to the Saturday 19:00 reset in `America/Sao_Paulo`. It excludes the
+current cycle to avoid training on the period being evaluated. Recent weeks
+receive more weight through a 28-day half-life.
 
-O dashboard usa essa curva no limite semanal e retorna automaticamente ao ritmo
-linear se o perfil não existir. Recomenda-se regenerá-lo uma vez por semana.
+The aggregate is written to `.cache/usage-profile.json`. It contains no
+conversation content, project names, or session identifiers. The dashboard
+uses this curve for the weekly pace calculation and falls back to a linear pace
+when no profile exists. Refreshing the profile once a week is recommended.
 
-## Métricas
+## Metrics
 
-- **Tokens processados:** input + output + cache criado + cache lido.
-- **Tokens novos:** input + output + cache criado.
-- **Saída / thinking:** contadores reportados em cada mensagem do assistente.
-- Eventos repetidos pelo log de streaming são deduplicados por sessão e
-  `message.id`.
+The interface deliberately separates two kinds of data:
+
+- **Official plan utilization:** the percentage and reset time reported by the
+  Anthropic OAuth usage endpoint. This is the source of truth for quota usage.
+- **Local activity counters:** token fields recorded in Claude Code JSONL logs.
+  They explain the shape and distribution of local activity, but cannot be
+  converted exactly into plan percentage.
+
+Local counters shown together in the dashboard:
+
+- **Input:** uncached input tokens reported in `input_tokens`.
+- **Output:** generated tokens reported in `output_tokens`.
+- **Cache writes:** input tokens written to the prompt cache, reported in
+  `cache_creation_input_tokens`.
+- **Cache reads:** input tokens reused from the prompt cache, reported in
+  `cache_read_input_tokens`.
+- **Thinking:** reasoning tokens reported in
+  `output_tokens_details.thinking_tokens`. This is a detail of output, not an
+  additional value to add to the totals.
+- **Profile basis:** input + output + cache writes. This derived value is used
+  to reconstruct the current weekly curve and train the historical profile.
+- **Processed volume:** profile basis + cache reads. This is useful as a measure
+  of total context handled, but large cache reads can make it much larger than
+  the amount of new work or the official quota percentage.
+
+Repeated streaming log entries are deduplicated by session and `message.id`.
