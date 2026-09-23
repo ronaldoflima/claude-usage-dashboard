@@ -3,6 +3,9 @@
 A local dashboard for monitoring Claude plan limits and understanding which
 sessions and models account for activity over a selected time range.
 
+<img width="1506" height="834" alt="image" src="https://github.com/user-attachments/assets/08d407cd-bb01-4266-8cd0-636258c89f78" />
+
+
 ## What it reads
 
 - `~/.claude/projects/**/*.jsonl`: metadata, timestamps, model names, and token
