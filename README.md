@@ -1,7 +1,97 @@
-# Claude Usage Dashboard
+# Claude + Codex Usage Dashboard
 
-A local dashboard for monitoring Claude plan limits and understanding which
-sessions and models account for activity over a selected time range.
+A local dashboard for monitoring Claude and Codex plan limits and understanding
+which sessions and models account for activity over a selected time range.
+Both providers are visible together, with independent quotas, reset times,
+pace estimates, and local rankings. Percentages are never added together.
+
+## Codex preview
+
+Run this branch separately from your existing dashboard:
+
+```bash
+python3 app.py --port 8788 --timezone America/Sao_Paulo
+```
+
+Choose your own IANA timezone. The Codex profile defaults to UTC; the existing
+Claude profile retains the timezone selected when it was generated.
+
+The Codex collector reads `CODEX_HOME` (default `~/.codex`), including
+`sessions/**/*.jsonl` and `archived_sessions/**/*.jsonl`. It saves only usage
+counters, timestamps, model identifiers, session identifiers, and project paths.
+Conversation content is parsed as part of JSON records but never persisted or
+returned to the browser. Project names and paths are still private metadata:
+keep the server local and never commit its databases.
+
+Official Codex limits are read through the installed, authenticated
+`codex app-server` using `initialize`, `initialized`, and
+`account/rateLimits/read`. No thread or model turn is started. The dashboard
+does not open Codex credential files itself. This integration requires a CLI
+version and account that support the documented method; API-key-only usage is
+not a ChatGPT subscription quota. See the
+[official App Server documentation](https://learn.chatgpt.com/docs/app-server).
+
+```bash
+python3 app.py --codex-dir /another/path/.codex --codex-bin /path/to/codex
+```
+
+Reloads and time-range changes only read cached data. **Sync now** and the
+selected automatic interval refresh both providers independently. Each provider
+has its own five-minute cache and error cooldown. Codex RPC reads have a bounded
+timeout; failure leaves Claude available. Codex errors use a five-minute cooldown
+because the RPC error does not expose HTTP `Retry-After` here.
+
+If official Codex limits cannot be fetched, the latest snapshot in the indexed
+local logs is shown with its original timestamp and an explicit local/stale
+label. It is not a fresh account read. Expired windows have no pace projection.
+Window durations and resets come from the data, not a hardcoded 5-hour/week pair.
+
+### Codex counters and profile
+
+- Codex `input_tokens` includes cached input. The dashboard displays uncached
+  input as `input_tokens - cached_input_tokens`, with cache reads separately.
+  Processed volume remains original input + output, without double counting.
+- Reasoning tokens are a subset of output. Cache writes are not presented as an
+  independently comparable Codex metric.
+- Usage is derived from changes in cumulative counters. Repeated notifications
+  are ignored; first observations and counter resets use `last_token_usage`
+  when available. Without a reliable baseline, the event is skipped rather than
+  inventing activity. Timestamped deltas are usage events, not necessarily one
+  user response or one API request.
+- Copied events older than a fork's creation time establish a baseline but do
+  not count toward the new session. Archived copies are deduplicated. Changed
+  files are reparsed; unchanged files are skipped.
+- The Codex expected curve is computed independently from indexed counters over
+  completed cycles: up to 90 days, 28-day half-life, fresh-token weights, and the
+  same historical/balanced-weekday modes as Claude. No network read is required
+  to calculate it. Missing training data falls back to a labeled linear estimate.
+  The API returns this aggregate as JSON; it does not overwrite the Claude profile.
+- Local history covers only the configured device/directory. It is not an
+  account-wide breakdown, and different providers' token counts are not equal
+  units of cost, quota, or productive work.
+
+### Observed quota history
+
+Successful official reads for both providers are recorded in the Git-ignored
+`.cache/quota-snapshots.sqlite3`. Repeated cache reads do not create duplicate
+samples. Failed reads and local-log fallbacks do not create official samples.
+
+The Codex chart shows the expected curve, actual official samples from the
+current reset cycle, and a separately styled projection. It does not reconstruct
+quota history from tokens. Lines break across gaps longer than 30 minutes or
+downward corrections. A new installation may have zero or one observed point;
+the chart fills in as synchronization runs. Samples persist across restarts,
+while the live quota cache remains in memory. The chart isolates limit buckets
+and reset cycles; it never connects different cycles.
+
+Claude retains its labeled token-based reconstruction and overlays official
+sample points when available. Its reconstructed line is anchored to the last
+official read time, not the page-load time. The personal expected profiles still
+use tokens, **not learned quota weights**; snapshot-based profile training is a
+future improvement requiring sufficiently complete cycles of observations.
+
+The combined activity chart uses the same time range and vertical scale for
+both providers. Detail sections remain separate and show all supported counters.
 
 <img width="1506" height="834" alt="image" src="https://github.com/user-attachments/assets/08d407cd-bb01-4266-8cd0-636258c89f78" />
 

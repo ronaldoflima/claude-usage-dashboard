@@ -274,19 +274,7 @@ class QuotaClient:
             if self.cached is not None and not force and age < self.ttl_seconds:
                 return {**self.cached, "cache_age_seconds": round(age)}
             try:
-                oauth = json.loads(self.credentials_path.read_text(encoding="utf-8"))["claudeAiOauth"]
-                token = oauth["accessToken"]
-                request = urllib.request.Request(
-                    USAGE_URL,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "anthropic-beta": USAGE_BETA,
-                        "Content-Type": "application/json",
-                        "User-Agent": "claude-usage-local/1.0",
-                    },
-                )
-                with urllib.request.urlopen(request, timeout=8) as response:
-                    raw = json.load(response)
+                raw = self._fetch()
                 normalized = self._normalize(raw)
                 self.cached = {"ok": True, "fetched_at": datetime.now(timezone.utc).isoformat(), **normalized}
                 self.cached_at = time.monotonic()
@@ -304,6 +292,16 @@ class QuotaClient:
                     return {**self.cached, "stale": True, "error": str(error), "cache_age_seconds": round(age), "retry_after_seconds": delay}
                 return {"ok": False, "error": str(error), "limits": [], "retry_after_seconds": delay}
             return {**self.cached, "cache_age_seconds": 0}
+
+    def _fetch(self) -> dict[str, Any]:
+        oauth = json.loads(self.credentials_path.read_text(encoding="utf-8"))["claudeAiOauth"]
+        request = urllib.request.Request(USAGE_URL, headers={
+            "Authorization": f"Bearer {oauth['accessToken']}",
+            "anthropic-beta": USAGE_BETA, "Content-Type": "application/json",
+            "User-Agent": "claude-usage-local/1.0",
+        })
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return json.load(response)
 
     @staticmethod
     def _normalize(raw: dict[str, Any]) -> dict[str, Any]:
@@ -354,13 +352,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
+        if parsed.path == "/api/codex/dashboard":
+            self._dashboard(parse_qs(parsed.query), codex=True)
+            return
+        if parsed.path in ("/api/codex/limits", "/api/snapshots"):
+            query = parse_qs(parsed.query)
+            if parsed.path == "/api/snapshots":
+                self._json({"ok": True, "claude": self.snapshots.read("claude"),
+                            "codex": self.snapshots.read("codex")})
+                return
+            force = query.get("force") == ["1"]
+            result = self.codex_quota.get(force=force, cache_only=not force and query.get("sync") != ["1"])
+            self.snapshots.record("codex", result)
+            if not result.get("ok"):
+                local = self.codex_index.local_limits()
+                if local.get("ok"):
+                    result = {**local, "stale": True, "error": result.get("error")}
+            self._json(result)
+            return
         if parsed.path == "/api/dashboard":
             self._dashboard(parse_qs(parsed.query))
             return
         if parsed.path == "/api/limits":
             query = parse_qs(parsed.query)
             force = query.get("force") == ["1"]
-            self._json(self.quota.get(force=force, cache_only=not force and query.get("sync") != ["1"]))
+            result = self.quota.get(force=force, cache_only=not force and query.get("sync") != ["1"])
+            self.snapshots.record("claude", result)
+            self._json(result)
             return
         if parsed.path == "/api/profile":
             self._profile()
@@ -383,7 +401,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 "hint": "execute: python3 build_usage_profile.py",
             })
 
-    def _dashboard(self, query: dict[str, list[str]]) -> None:
+    def _dashboard(self, query: dict[str, list[str]], codex: bool = False) -> None:
         now_ms = int(time.time() * 1000)
         try:
             end_ms = int(query.get("to", [now_ms])[0])
@@ -394,8 +412,26 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self._json({"ok": False, "error": str(error)}, status=400)
             return
-        scan = self.index.refresh() if query.get("sync") == ["1"] else None
-        result = self.index.dashboard(start_ms, end_ms, bucket_ms)
+        index = self.codex_index if codex else self.index
+        scan = index.refresh() if query.get("sync") == ["1"] else None
+        result = index.dashboard(start_ms, end_ms, bucket_ms)
+        if codex:
+            # Building from the already-indexed counters requires no network access.
+            from build_usage_profile import account_reset, build_profile
+            limits = self.codex_quota.get(cache_only=True)
+            if not limits.get("ok") or limits.get("stale"):
+                limits = index.local_limits()
+            try:
+                reset = account_reset(limits, self.profile_timezone)
+                with index.lock:
+                    profile = build_profile(index, lookback_days=90, timezone_name=self.profile_timezone,
+                        reset_weekday=reset.weekday(), reset_hour=reset.hour, reset_minute=reset.minute,
+                        half_life_days=28, metric="fresh_tokens")
+                result["profile"] = {**profile, "source": "codex_jsonl_aggregates",
+                                     "ok": profile["weekly"]["raw_total"] > 0}
+            except ValueError:
+                result["profile"] = {"ok": False}
+            result["local_limits"] = index.local_limits()
         self._json({"ok": True, "scan": scan, **result})
 
     @staticmethod
@@ -409,7 +445,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return 60 * 60_000
 
     def _static(self, path: str) -> None:
-        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/i18n.js": "i18n.js", "/pace-profile.js": "pace-profile.js", "/styles.css": "styles.css"}
+        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/i18n.js": "i18n.js", "/pace-profile.js": "pace-profile.js", "/styles.css": "styles.css", "/providers.js": "providers.js"}
         name = names.get(path)
         if not name:
             self.send_error(404)
@@ -438,18 +474,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Local Claude usage dashboard")
+    from codex_usage import CodexIndex, CodexQuotaClient, SnapshotStore, DEFAULT_CODEX_DIR
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    parser = argparse.ArgumentParser(description="Local Claude and Codex usage dashboard")
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8787, help="port (default: 8787)")
     parser.add_argument("--claude-dir", type=Path, default=DEFAULT_CLAUDE_DIR)
     parser.add_argument("--db", type=Path, default=ROOT / ".cache" / "usage.sqlite3")
+    parser.add_argument("--codex-dir", type=Path, default=DEFAULT_CODEX_DIR)
+    parser.add_argument("--codex-bin", default="codex", help="Codex CLI executable for official limit reads")
+    parser.add_argument("--codex-db", type=Path, default=ROOT / ".cache" / "codex-usage.sqlite3")
+    parser.add_argument("--snapshots-db", type=Path, default=ROOT / ".cache" / "quota-snapshots.sqlite3")
+    parser.add_argument("--timezone", default="UTC", help="IANA timezone for the Codex historical profile")
     args = parser.parse_args()
+    try:
+        ZoneInfo(args.timezone)
+    except ZoneInfoNotFoundError:
+        parser.error("Unknown IANA timezone")
 
     DashboardHandler.index = UsageIndex(args.claude_dir.expanduser(), args.db)
     DashboardHandler.quota = QuotaClient(args.claude_dir.expanduser())
+    DashboardHandler.codex_index = CodexIndex(args.codex_dir.expanduser(), args.codex_db)
+    DashboardHandler.codex_quota = CodexQuotaClient(args.codex_dir.expanduser(), args.codex_bin)
+    DashboardHandler.snapshots = SnapshotStore(args.snapshots_db)
+    DashboardHandler.profile_timezone = args.timezone
     server = ThreadingHTTPServer((args.host, args.port), DashboardHandler)
-    print(f"Claude Usage disponível em http://{args.host}:{args.port}")
-    print("Conteúdo das conversas não é lido nem armazenado.")
+    print(f"Usage Dashboard available at http://{args.host}:{args.port}")
+    print("Conversation content is not stored or sent to the browser.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

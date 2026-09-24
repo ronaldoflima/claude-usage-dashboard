@@ -32,6 +32,26 @@ const TRANSLATIONS = {
   }
 };
 const DYNAMIC = {
+  'CLAUDE · RITMO SEMANAL': ['CLAUDE · WEEKLY PACE', 'CLAUDE · RITMO SEMANAL'],
+  'CODEX · RITMO SEMANAL': ['CODEX · WEEKLY PACE', 'CODEX · RITMO SEMANAL'],
+  'Curva esperada × uso observado': ['Expected curve × observed usage', 'Curva esperada × uso observado'],
+  'Snapshots oficiais': ['Official snapshots', 'Capturas oficiales'],
+  'Projeção': ['Projection', 'Proyección'],
+  'Atividade no mesmo intervalo': ['Activity in the same time range', 'Actividad en el mismo intervalo'],
+  'Tokens são atividade, não equivalência de custo ou cota.': ['Tokens measure activity, not equivalent cost or quota.', 'Los tokens miden actividad, no equivalencia de costo o cuota.'],
+  'Atividade por modelo e sessão': ['Activity by model and session', 'Actividad por modelo y sesión'],
+  'Somente registros deste dispositivo. Cache já está incluído na entrada do Codex e é separado abaixo.': ['Records from this device only. Codex input includes cache; it is separated below.', 'Solo registros de este dispositivo. La entrada de Codex incluye caché; se separa abajo.'],
+  'Snapshot local': ['Local snapshot', 'Captura local'],
+  'Dados desatualizados': ['Stale data', 'Datos desactualizados'],
+  'Estimativa linear': ['Linear estimate', 'Estimación lineal'],
+  'Estimativa na data do snapshot': ['Estimate as of the snapshot', 'Estimación a la fecha de la captura'],
+  'Janela encerrada ou dados insuficientes. Sincronize para atualizar.': ['Window ended or insufficient data. Sync to update.', 'Ventana finalizada o datos insuficientes. Sincroniza para actualizar.'],
+  'Codex indisponível. Use Sync ou verifique o login do CLI.': ['Codex unavailable. Sync or check your CLI login.', 'Codex no disponible. Sincroniza o comprueba el acceso del CLI.'],
+  'Input sem cache': ['Uncached input', 'Entrada sin caché'],
+  'horas com dados': ['hours with data', 'horas con datos'],
+  'snapshots neste ciclo': ['snapshots in this cycle', 'capturas en este ciclo'],
+  'Sem interpolação em lacunas maiores que 30 min. Projeção não é medição.': ['No interpolation across gaps over 30 min. Projection is not a measurement.', 'Sin interpolación en intervalos mayores a 30 min. La proyección no es una medición.'],
+  'eventos de uso': ['usage events', 'eventos de uso'],
   'reset não informado': ['reset time unavailable', 'reinicio no informado'],
   'No ritmo': ['On pace', 'Al ritmo'], 'Limite atingido': ['Limit reached', 'Límite alcanzado'], 'Ritmo acelerado': ['Fast pace', 'Ritmo acelerado'], 'Ritmo tranquilo': ['Comfortable pace', 'Ritmo tranquilo'],
   'Mesmo peso para cada dia útil': ['Equal weight for each weekday', 'Mismo peso para cada día laborable'], 'da semana': ['of the week', 'de la semana'],
@@ -55,7 +75,7 @@ function translateStatic() {
   document.querySelectorAll('[data-i18n-aria]').forEach(node => node.setAttribute('aria-label', tr(node.dataset.i18nAria)));
   document.getElementById('syncNow').title = tr('Sincronizar agora');
   document.documentElement.lang = language;
-  document.title = `Claude · ${tr('Ritmo de Uso')}`;
+  document.title = `Claude + Codex · ${tr('Ritmo de Uso')}`;
 }
 function collectStatic() {
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);

@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude · Usage Pace</title>
+  <title>Claude + Codex · Usage Pace</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
     <header class="topbar">
       <div>
-        <p class="eyebrow">CLAUDE CODE · LOCAL</p>
+        <p class="eyebrow">CLAUDE + CODEX · LOCAL</p>
         <h1>Ritmo de Uso</h1>
         <p class="subtitle">Limites oficiais e atividade local, sem ler o conteúdo das conversas.</p>
       </div>
@@ -63,11 +63,21 @@
       </select>
       <p id="paceModeNote" class="curve-note" aria-live="polite"></p>
     </section>
-    <section id="limits" class="limit-grid" data-i18n-aria="Limites do plano" aria-label="Plan limits"></section>
+    <div class="provider-columns">
+      <section class="provider-section" aria-labelledby="claudeTitle">
+        <div class="section-head"><h2 id="claudeTitle">Claude</h2><span id="claudeSync" class="provider-status"></span></div>
+        <section id="limits" class="limit-grid" data-i18n-aria="Limites do plano" aria-label="Plan limits"></section>
+      </section>
+      <section class="provider-section codex-section" aria-labelledby="codexTitle">
+        <div class="section-head"><h2 id="codexTitle">Codex</h2><span id="codexSync" class="provider-status"></span></div>
+        <section id="codexLimits" class="limit-grid" aria-label="Codex limits"></section>
+      </section>
+    </div>
 
+    <div class="provider-columns">
     <section class="panel weekly-curve-panel">
       <div class="section-head">
-        <div><p class="eyebrow">RITMO SEMANAL</p><h2>Curva esperada × uso desta semana</h2></div>
+        <div><p class="eyebrow">CLAUDE · RITMO SEMANAL</p><h2>Curva esperada × uso desta semana</h2></div>
         <span id="weeklyCurveSummary" class="curve-summary"></span>
       </div>
       <div class="curve-legend">
@@ -78,10 +88,28 @@
       <div id="weeklyCurve" class="weekly-curve" role="img" data-i18n-aria="Curva acumulada de uso semanal" aria-label="Cumulative weekly usage curve"></div>
       <p class="curve-note">A curva pessoal usa somente ciclos encerrados. A linha atual vem dos tokens locais e é calibrada pelo percentual oficial mais recente.</p>
     </section>
+    <section class="panel weekly-curve-panel codex-section">
+      <div class="section-head"><div><p class="eyebrow">CODEX · RITMO SEMANAL</p><h2>Curva esperada × uso observado</h2></div></div>
+      <div class="curve-legend"><span><i class="expected-dot"></i>Curva esperada</span><span><i class="actual-dot"></i>Snapshots oficiais</span><span><i class="projection-dot"></i>Projeção</span></div>
+      <div id="codexCurve" class="weekly-curve" role="img" aria-label="Codex weekly usage"></div>
+      <p id="codexCurveNote" class="curve-note"></p>
+    </section>
+    </div>
+
+    <section class="panel comparison-panel">
+      <div class="section-head"><div><p class="eyebrow">CLAUDE + CODEX</p><h2>Atividade no mesmo intervalo</h2></div><p class="chart-note">Tokens são atividade, não equivalência de custo ou cota.</p></div>
+      <div id="providerActivity"></div>
+    </section>
+
+    <section class="codex-section metrics-section" aria-labelledby="codexActivityTitle">
+      <div class="section-head"><div><p class="eyebrow">CODEX · LOCAL</p><h2 id="codexActivityTitle">Atividade por modelo e sessão</h2></div><p class="chart-note">Somente registros deste dispositivo. Cache já está incluído na entrada do Codex e é separado abaixo.</p></div>
+      <div id="codexMetrics" class="metric-grid"></div>
+      <div class="split"><article class="panel ranking"><h2>Volume por modelo</h2><div id="codexModels"></div></article><article class="panel ranking"><h2>Volume por sessão</h2><div id="codexSessions"></div></article></div>
+    </section>
 
     <section class="metrics-section" aria-labelledby="metricsTitle">
       <div class="section-head metrics-head">
-        <div><p class="eyebrow">ATIVIDADE LOCAL</p><h2 id="metricsTitle">O que os contadores significam</h2></div>
+        <div><p class="eyebrow">CLAUDE · LOCAL</p><h2 id="metricsTitle">O que os contadores significam</h2></div>
         <p class="metrics-disclaimer">Estes tokens explicam a atividade local, não a porcentagem oficial da cota.</p>
       </div>
       <div class="metric-grid">
@@ -116,10 +144,11 @@
       </article>
     </section>
 
-    <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth Usage</span><span id="coverage"></span></footer>
+    <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth · <code>CODEX_HOME</code> + Codex App Server</span><span id="coverage"></span></footer>
   </main>
   <script src="/i18n.js"></script>
   <script src="/pace-profile.js"></script>
+  <script src="/providers.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

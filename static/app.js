@@ -56,22 +56,23 @@ function profileProjection(profile, targetPercent, startMs) {
   }
   return null;
 }
-function paceFor(limit) {
-  const durationMs = limit.kind === 'session' ? 5 * 60 * 60e3 : 7 * 24 * 60 * 60e3;
+function paceFor(limit, profile = state.profile, observedAt = state.limits?.fetched_at) {
+  const durationMs = limit.window_minutes ? limit.window_minutes * 60e3 : limit.kind === 'session' ? 5 * 60 * 60e3 : 7 * 24 * 60 * 60e3;
   const resetMs = new Date(limit.resets_at).getTime();
   if (!Number.isFinite(resetMs)) return null;
-  const now = Date.now(); const startMs = resetMs - durationMs;
+  const now = new Date(observedAt).getTime(); const startMs = resetMs - durationMs;
+  if (!Number.isFinite(now) || now < startMs || now >= resetMs || Date.now() >= resetMs) return null;
   const elapsedMs = Math.max(60e3, Math.min(durationMs, now - startMs));
   const remainingMs = Math.max(0, resetMs - now);
-  const historical = limit.kind !== 'session' && state.profile?.ok;
-  const historicalExpected = historical ? profileProgress(state.profile, elapsedMs / 36e5, startMs) : null;
+  const historical = durationMs === 168 * 36e5 && profile?.ok;
+  const historicalExpected = historical ? profileProgress(profile, elapsedMs / 36e5, startMs) : null;
   const expected = historicalExpected ?? Math.max(0, Math.min(100, elapsedMs / durationMs * 100));
   const actualRate = limit.utilization / (elapsedMs / 36e5);
   const sustainableRate = remainingMs > 0 ? (100 - limit.utilization) / (remainingMs / 36e5) : 0;
   const ratio = expected > 0 ? limit.utilization / expected : 0;
   const targetProfile = ratio > 0 ? expected + (100 - limit.utilization) / ratio : null;
-  const projectedMs = historical
-    ? profileProjection(state.profile, targetProfile, startMs)
+  const projectedMs = ratio <= 0 ? null : historical
+    ? profileProjection(profile, targetProfile, startMs)
     : actualRate > 0 ? startMs + (100 / actualRate) * 36e5 : null;
   const margin = expected - limit.utilization;
   let label = tr('No ritmo'); let className = 'steady';
@@ -92,10 +93,13 @@ async function loadWeeklyData() {
   if (!weekly?.resets_at) return null;
   const resetMs = new Date(weekly.resets_at).getTime();
   const startMs = resetMs - 7 * 24 * 36e5;
-  const endMs = Math.min(Date.now(), resetMs);
+  const observedMs = Date.parse(state.limits.fetched_at);
+  if (!Number.isFinite(observedMs) || observedMs < startMs || Date.now() >= resetMs) return null;
+  const endMs = Math.min(observedMs, resetMs);
+  if (endMs <= startMs) return null;
   const response = await fetch(`/api/dashboard?from=${startMs}&to=${endMs}&bucket=3600000`);
   const data = await response.json();
-  return data.ok ? { ...data, resetMs, startMs, official: weekly.utilization } : null;
+  return data.ok ? { ...data, resetMs, startMs, observedMs, limit: weekly, official: weekly.utilization } : null;
 }
 
 async function load(custom, sync = false, force = false) {
@@ -109,15 +113,15 @@ async function load(custom, sync = false, force = false) {
   const start = selected?.start ?? end - DURATIONS[state.range];
   try {
     const [usageResponse, limitsResponse, profileResponse] = await Promise.all([
-      fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`), fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile')
+      fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`), fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile'),
+      loadCodex(start, end, sync, force)
     ]);
     state.data = await usageResponse.json(); state.limits = await limitsResponse.json(); state.profile = await profileResponse.json();
     if (!state.data.ok) throw new Error(state.data.error);
     state.weeklyData = await loadWeeklyData();
+    try { state.snapshots = await (await fetch('/api/snapshots')).json(); } catch { state.snapshots = {}; }
     render();
-    document.getElementById('updated').textContent = state.limits.fetched_at
-      ? `${tr('Último sync oficial:')} ${new Date(state.limits.fetched_at).toLocaleString(locale())}`
-      : tr('Sem sync oficial');
+    renderSyncTimestamp();
     document.getElementById('syncStatus').textContent = state.limits.error
       ? `${tr('Sync pendente:')} ${state.limits.error}${state.limits.retry_after_seconds ? ` · ${Math.ceil(state.limits.retry_after_seconds / 60)} min` : ''}` : '';
   } catch (error) {
@@ -143,6 +147,16 @@ function render() {
   document.getElementById('messages').textContent = exact.format(t.messages || 0);
   document.getElementById('coverage').textContent = d.coverage.last_event_ms ? `${tr("último evento")} ${formatDate(d.coverage.last_event_ms)}` : tr('sem eventos');
   renderPaceMode(); renderLimits(); renderWeeklyCurve(); renderTimeline(); renderRanking('models', d.models, 'model'); renderRanking('sessionList', d.sessions, 'session');
+  renderProviders();
+}
+
+function renderSyncTimestamp() {
+  const reads = [state.limits, state.codex?.limits]
+    .filter(payload => payload?.source !== 'codex_local_snapshot' && payload?.fetched_at)
+    .map(payload => Date.parse(payload.fetched_at)).filter(Number.isFinite);
+  document.getElementById('updated').textContent = reads.length
+    ? `${tr('Último sync oficial:')} ${new Date(Math.max(...reads)).toLocaleString(locale())}`
+    : tr('Sem sync oficial');
 }
 
 function renderLimits() {
@@ -181,7 +195,7 @@ function renderWeeklyCurve() {
     return;
   }
 
-  const elapsedHours = Math.max(0, Math.min(168, (Date.now() - data.startMs) / 36e5));
+  const elapsedHours = Math.max(0, Math.min(168, (data.observedMs - data.startMs) / 36e5));
   const expectedNow = profileProgress(state.profile, elapsedHours, data.startMs);
   const hourly = Array(168).fill(0);
   for (const row of data.timeline) {
@@ -237,6 +251,7 @@ function renderWeeklyCurve() {
     <line x1="${currentX}" y1="${top}" x2="${currentX}" y2="${height - bottom}" class="curve-now-line"/>
     <circle cx="${currentX}" cy="${currentY}" r="6" class="curve-now-point"/>
     <circle cx="${currentX}" cy="${y(expectedNow)}" r="4" class="curve-expected-point"/>
+    ${quotaSamples(state.snapshots?.claude, data.limit).map(sample => `<circle cx="${x((sample.observed_ms - data.startMs) / 36e5)}" cy="${y(sample.utilization)}" r="3" class="curve-now-point"><title>${esc(formatDate(sample.observed_ms))} · ${sample.utilization}%</title></circle>`).join('')}
   </svg>`;
 
   const delta = data.official - expectedNow;
@@ -264,15 +279,16 @@ function renderTimeline() {
   timeline.insertAdjacentHTML('afterend', `<div class="axis"><span>${formatDate(buckets[0][0])}</span><span>${formatDate(buckets.at(-1)[0])}</span></div>`);
 }
 
-function renderRanking(id, rows, type) {
+function renderRanking(id, rows, type, codex = false) {
   const root = document.getElementById(id); const max = Math.max(...rows.map(x => x.total_tokens), 1);
   root.innerHTML = rows.slice(0, type === 'model' ? 8 : 12).map((row, i) => {
     const name = type === 'model' ? shortModel(row.model) : row.project;
-    const detail = type === 'model' ? `${exact.format(row.messages)} ${tr("respostas")}` : `${row.session_id.slice(0, 8)} · ${exact.format(row.messages)} ${tr("respostas")}`;
+    const countLabel = codex ? tr('eventos de uso') : tr('respostas');
+    const detail = type === 'model' ? `${exact.format(row.messages)} ${countLabel}` : `${row.session_id.slice(0, 8)} · ${exact.format(row.messages)} ${countLabel}`;
     const values = [
       [tr('Base perfil'), row.fresh_tokens], ['Input', row.input_tokens], ['Output', row.output_tokens],
       [tr('Cache escrito'), row.cache_creation_tokens], [tr('Cache lido'), row.cache_read_tokens], ['Thinking', row.thinking_tokens],
-    ];
+    ].filter(([label]) => !codex || label !== tr('Cache escrito'));
     return `<div class="rank-row">
       <div class="rank-summary"><div class="rank-name"><strong>${i + 1}. ${esc(name)}</strong><small title="${esc(type === 'session' ? row.cwd : row.model)}">${esc(detail)}</small></div><div class="rank-value">${formatTokens(row.total_tokens)}<small>${tr('processados')}</small></div></div>
       <div class="mini-bar"><i style="--value:${row.total_tokens / max * 100}%;background:${COLORS[i % COLORS.length]}"></i></div>
@@ -290,13 +306,13 @@ document.getElementById('language').addEventListener('change', event => {
   try { localStorage.setItem('language', language); } catch {}
   updateFormatters(); translateStatic();
   TOKEN_COMPONENTS[2].label = tr('Escrita em cache'); TOKEN_COMPONENTS[3].label = tr('Leitura de cache');
-  if (state.data) { render(); document.getElementById('updated').textContent = state.limits?.fetched_at ? `${tr('Último sync oficial:')} ${new Date(state.limits.fetched_at).toLocaleString(locale())}` : tr('Sem sync oficial'); }
+  if (state.data) { render(); renderSyncTimestamp(); }
   else renderPaceMode();
 });
 document.getElementById('paceMode').addEventListener('change', event => {
   state.paceMode = event.target.value === 'equal_weekdays' ? 'equal_weekdays' : 'historical';
   try { localStorage.setItem('paceMode', state.paceMode); } catch {}
-  renderPaceMode(); renderLimits(); renderWeeklyCurve();
+  renderPaceMode(); renderLimits(); renderWeeklyCurve(); if (state.data) renderProviders();
 });
 renderPaceMode();
 document.getElementById('presets').addEventListener('click', event => {
@@ -325,4 +341,4 @@ document.getElementById('syncInterval').addEventListener('change', event => {
 });
 document.getElementById('syncNow').addEventListener('click', () => load(null, true, true));
 load(); scheduleSync();
-setInterval(() => { if (state.limits) { renderLimits(); renderWeeklyCurve(); } }, 60_000);
+setInterval(() => { if (state.limits) { renderLimits(); renderWeeklyCurve(); renderProviders(); } }, 60_000);
