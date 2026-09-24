@@ -77,6 +77,9 @@ input, select { padding: 8px 10px; margin-left: 4px; }
 .curve-now-point { fill: var(--ink); stroke: var(--green); stroke-width: 3; vector-effect: non-scaling-stroke; }
 .curve-expected-point { fill: var(--accent); stroke: var(--panel); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .curve-note { color: #777269; font-size: 10px; margin-top: 2px; }
+.pace-controls { padding: 16px 20px; margin: 14px 0; }
+.pace-controls label { margin-right: 12px; }
+.pace-controls .curve-note { margin-top: 10px; line-height: 1.5; }
 .metrics-section { margin-top: 26px; }
 .metrics-head { align-items: end; }
 .metrics-disclaimer, .chart-note { color: var(--muted); font-size: 11px; max-width: 430px; text-align: right; line-height: 1.45; }

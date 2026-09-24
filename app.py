@@ -390,7 +390,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return 60 * 60_000
 
     def _static(self, path: str) -> None:
-        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/styles.css": "styles.css"}
+        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/pace-profile.js": "pace-profile.js", "/styles.css": "styles.css"}
         name = names.get(path)
         if not name:
             self.send_error(404)

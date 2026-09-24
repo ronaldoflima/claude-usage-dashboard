@@ -69,6 +69,21 @@ conversation content, project names, or session identifiers. The dashboard
 uses this curve for the weekly pace calculation and falls back to a linear pace
 when no profile exists. Refreshing the profile once a week is recommended.
 
+The weekly pace selector offers two modes, saved in the browser:
+
+- **Historical profile** (default): uses the original hourly weights.
+- **Balanced Monday–Friday**: averages each clock hour across the five workdays
+  and assigns that average to each workday. Each workday therefore receives
+  one fifth of the combined workday share, while retaining the average intraday
+  pattern. Every Saturday and Sunday slot remains unchanged, as does the weekly
+  total. This is a planning assumption, not inferred unmet demand or automatic
+  outlier detection.
+
+The selected mode applies to the expected weekly curve, pace indicators, and
+weekly projections. It does not change official utilization, the observed usage
+curve, or the five-hour session calculation. No profile rebuild is needed to
+switch modes.
+
 ## Metrics
 
 The interface deliberately separates two kinds of data:

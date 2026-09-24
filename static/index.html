@@ -30,6 +30,14 @@
       </div>
     </section>
 
+    <section class="panel pace-controls" aria-label="Modo do ritmo semanal">
+      <label for="paceMode">Ritmo semanal</label>
+      <select id="paceMode" aria-describedby="paceModeNote">
+        <option value="historical">Perfil histórico</option>
+        <option value="equal_weekdays">Seg–sex equilibrado</option>
+      </select>
+      <p id="paceModeNote" class="curve-note" aria-live="polite"></p>
+    </section>
     <section id="limits" class="limit-grid" aria-label="Limites do plano"></section>
 
     <section class="panel weekly-curve-panel">
@@ -38,7 +46,7 @@
         <span id="weeklyCurveSummary" class="curve-summary"></span>
       </div>
       <div class="curve-legend">
-        <span><i class="expected-dot"></i>Curva pessoal esperada</span>
+        <span><i class="expected-dot"></i><span id="expectedCurveLabel">Curva pessoal esperada</span></span>
         <span><i class="actual-dot"></i>Uso estimado da semana</span>
         <span><i class="now-dot"></i>Percentual oficial agora</span>
       </div>
@@ -85,6 +93,7 @@
 
     <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth Usage</span><span id="coverage"></span></footer>
   </main>
+  <script src="/pace-profile.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
