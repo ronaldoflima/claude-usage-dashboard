@@ -21,6 +21,17 @@
 .provider-columns .weekly-curve-panel { margin-top: 0; min-width: 0; }
 .provider-columns .weekly-curve svg { height: 260px; }
 .provider-columns .section-head { flex-wrap: wrap; }
+/* Single-provider mode restores the original full-width layout and card grid. */
+body[data-provider-view="claude"] [data-provider="codex"],
+body[data-provider-view="codex"] [data-provider="claude"],
+body[data-provider-view="claude"] [data-provider="both"],
+body[data-provider-view="codex"] [data-provider="both"] { display: none !important; }
+body:not([data-provider-view="both"]) .provider-columns { display: contents; }
+body:not([data-provider-view="both"]) .provider-columns .limit-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+body:not([data-provider-view="both"]) .provider-columns .weekly-curve-panel { margin-top: 14px; }
+body:not([data-provider-view="both"]) .provider-columns .weekly-curve svg { height: 290px; }
+body:not([data-provider-view="both"]) .provider-columns .section-head { flex-wrap: nowrap; }
+body[data-provider-view="claude"] .provider-section > .section-head { display: none; }
 .comparison-panel { margin-top: 20px; padding: 22px; }
 .provider-activity-row { display: grid; grid-template-columns: 80px 1fr 100px; gap: 16px; align-items: center; margin-top: 16px; font-size: 13px; }
 .provider-activity-row small { display: block; color: var(--muted); }

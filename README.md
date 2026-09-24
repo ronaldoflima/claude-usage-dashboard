@@ -5,6 +5,15 @@ which sessions and models account for activity over a selected time range.
 Both providers are visible together, with independent quotas, reset times,
 pace estimates, and local rankings. Percentages are never added together.
 
+The header's **Both / Claude / Codex** selector remembers your choice in this
+browser. **Claude** restores the original full-width layout: limit cards in a
+responsive grid, then the weekly curve, metrics, timeline, and rankings. Codex
+sections and the comparison panel are hidden. **Codex** shows only Codex.
+Only selected providers are loaded and synchronized by this page. Switching
+views reads cached data; it does not request an official sync or delete history.
+An already-running request may finish, and other open tabs keep their own sync
+selection until reloaded.
+
 ## Codex preview
 
 Run this branch separately from your existing dashboard:

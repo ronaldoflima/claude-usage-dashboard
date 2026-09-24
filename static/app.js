@@ -1,11 +1,13 @@
 const state = { range: '5h', custom: null, data: null, limits: null, profile: null, weeklyData: null };
+state.providerView = 'both';
+try { const saved = localStorage.getItem('providerView'); if (['both', 'claude', 'codex'].includes(saved)) state.providerView = saved; } catch {}
 state.paceMode = 'historical';
 try { if (localStorage.getItem('paceMode') === 'equal_weekdays') state.paceMode = 'equal_weekdays'; } catch {}
 function selectedProfileSlots(profile, startMs) { return alignedPaceSlots(profile, state.paceMode, startMs); }
 function paceModeLabel() { return state.paceMode === 'equal_weekdays' ? tr('Seg–sex equilibrado') : tr('Perfil histórico'); }
 function renderPaceMode() {
   document.getElementById('paceMode').value = state.paceMode;
-  const share = state.profile?.weekly?.business_days_share;
+  const share = (state.providerView === 'codex' ? state.codex?.activity?.profile : state.profile)?.weekly?.business_days_share;
   document.getElementById('paceModeNote').textContent = state.paceMode === 'equal_weekdays'
     ? `${tr("Mesmo peso para cada dia útil")}${Number.isFinite(share) ? ` (${(share / 5).toFixed(2)}% ${tr("da semana")})` : ''}, ${tr("com a média por horário. Sábado e domingo preservados. É uma hipótese de planejamento, não uma correção do histórico.")}`
     : tr('Distribuição histórica por dia e horário, incluindo períodos em que você pode ter economizado cota.');
@@ -103,27 +105,35 @@ async function loadWeeklyData() {
 }
 
 async function load(custom, sync = false, force = false) {
-  if (state.loading) return;
+  if (custom) state.custom = custom;
+  if (state.loading) { state.pendingLoad = true; return; }
   state.loading = true;
   document.getElementById('syncNow').disabled = true;
   document.getElementById('syncNow').setAttribute('aria-busy', String(sync));
-  if (custom) state.custom = custom;
   const selected = state.custom;
   const end = selected?.end ?? Date.now();
   const start = selected?.start ?? end - DURATIONS[state.range];
   try {
-    const [usageResponse, limitsResponse, profileResponse] = await Promise.all([
-      fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`), fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile'),
-      loadCodex(start, end, sync, force)
-    ]);
-    state.data = await usageResponse.json(); state.limits = await limitsResponse.json(); state.profile = await profileResponse.json();
-    if (!state.data.ok) throw new Error(state.data.error);
-    state.weeklyData = await loadWeeklyData();
+    const jobs = [];
+    if (providerEnabled('claude')) jobs.push((async () => {
+      const [usageResponse, limitsResponse, profileResponse] = await Promise.all([
+        fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`),
+        fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile')
+      ]);
+      state.data = await usageResponse.json(); state.limits = await limitsResponse.json(); state.profile = await profileResponse.json();
+      if (!state.data.ok) throw new Error(state.data.error);
+      if (providerEnabled('claude')) state.weeklyData = await loadWeeklyData();
+    })());
+    if (providerEnabled('codex')) jobs.push(loadCodex(start, end, sync, force));
+    const completed = await Promise.allSettled(jobs);
+    const failed = completed.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
     try { state.snapshots = await (await fetch('/api/snapshots')).json(); } catch { state.snapshots = {}; }
     render();
     renderSyncTimestamp();
-    document.getElementById('syncStatus').textContent = state.limits.error
-      ? `${tr('Sync pendente:')} ${state.limits.error}${state.limits.retry_after_seconds ? ` · ${Math.ceil(state.limits.retry_after_seconds / 60)} min` : ''}` : '';
+    document.getElementById('syncStatus').textContent = [['claude', state.limits], ['codex', state.codex?.limits]]
+      .filter(([provider, payload]) => providerEnabled(provider) && payload?.error)
+      .map(([provider, payload]) => `${provider}: ${tr('Sync pendente:')} ${payload.error}${payload.retry_after_seconds ? ` · ${Math.ceil(payload.retry_after_seconds / 60)} min` : ''}`).join(' · ');
   } catch (error) {
     document.getElementById('updated').textContent = tr('falha na atualização');
     document.getElementById('limits').innerHTML = `<div class="panel error">${esc(error.message)}</div>`;
@@ -131,10 +141,19 @@ async function load(custom, sync = false, force = false) {
     state.loading = false;
     document.getElementById('syncNow').disabled = false;
     document.getElementById('syncNow').setAttribute('aria-busy', 'false');
+    if (state.pendingLoad) { state.pendingLoad = false; return load(); }
   }
 }
 
 function render() {
+  renderProviderView(); renderPaceMode();
+  if (providerEnabled('claude') && state.data?.ok) renderClaude();
+  renderProviders();
+  const coverage = state.providerView === 'codex' ? state.codex?.activity?.coverage : state.data?.coverage;
+  document.getElementById('coverage').textContent = coverage?.last_event_ms ? `${tr('último evento')} ${formatDate(coverage.last_event_ms)}` : tr('sem eventos');
+}
+
+function renderClaude() {
   const d = state.data, t = d.totals;
   document.getElementById('totalTokens').textContent = formatTokens(t.total_tokens);
   document.getElementById('freshTokens').textContent = formatTokens(t.fresh_tokens);
@@ -147,11 +166,10 @@ function render() {
   document.getElementById('messages').textContent = exact.format(t.messages || 0);
   document.getElementById('coverage').textContent = d.coverage.last_event_ms ? `${tr("último evento")} ${formatDate(d.coverage.last_event_ms)}` : tr('sem eventos');
   renderPaceMode(); renderLimits(); renderWeeklyCurve(); renderTimeline(); renderRanking('models', d.models, 'model'); renderRanking('sessionList', d.sessions, 'session');
-  renderProviders();
 }
 
 function renderSyncTimestamp() {
-  const reads = [state.limits, state.codex?.limits]
+  const reads = [providerEnabled('claude') ? state.limits : null, providerEnabled('codex') ? state.codex?.limits : null]
     .filter(payload => payload?.source !== 'codex_local_snapshot' && payload?.fetched_at)
     .map(payload => Date.parse(payload.fetched_at)).filter(Number.isFinite);
   document.getElementById('updated').textContent = reads.length
@@ -306,15 +324,20 @@ document.getElementById('language').addEventListener('change', event => {
   try { localStorage.setItem('language', language); } catch {}
   updateFormatters(); translateStatic();
   TOKEN_COMPONENTS[2].label = tr('Escrita em cache'); TOKEN_COMPONENTS[3].label = tr('Leitura de cache');
-  if (state.data) { render(); renderSyncTimestamp(); }
-  else renderPaceMode();
+  render(); renderSyncTimestamp();
 });
 document.getElementById('paceMode').addEventListener('change', event => {
   state.paceMode = event.target.value === 'equal_weekdays' ? 'equal_weekdays' : 'historical';
   try { localStorage.setItem('paceMode', state.paceMode); } catch {}
-  renderPaceMode(); renderLimits(); renderWeeklyCurve(); if (state.data) renderProviders();
+  render();
 });
-renderPaceMode();
+renderProviderView(); renderPaceMode();
+document.getElementById('providerView').addEventListener('change', event => {
+  state.providerView = ['both', 'claude', 'codex'].includes(event.target.value) ? event.target.value : 'both';
+  try { localStorage.setItem('providerView', state.providerView); } catch {}
+  render(); renderSyncTimestamp();
+  return load(); // Switching tools reads cache only; never triggers an official sync.
+});
 document.getElementById('presets').addEventListener('click', event => {
   const button = event.target.closest('[data-range]'); if (!button) return;
   state.range = button.dataset.range; state.custom = null; document.querySelectorAll('[data-range]').forEach(x => x.classList.toggle('active', x === button)); load();
@@ -341,4 +364,4 @@ document.getElementById('syncInterval').addEventListener('change', event => {
 });
 document.getElementById('syncNow').addEventListener('click', () => load(null, true, true));
 load(); scheduleSync();
-setInterval(() => { if (state.limits) { renderLimits(); renderWeeklyCurve(); renderProviders(); } }, 60_000);
+setInterval(() => { render(); renderSyncTimestamp(); }, 60_000);

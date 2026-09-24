@@ -1,4 +1,16 @@
 /* Provider-specific data stays separate; quota percentages are never added. */
+function providerEnabled(provider) { return state.providerView === 'both' || state.providerView === provider; }
+
+function renderProviderView() {
+  document.body.dataset.providerView = state.providerView;
+  document.getElementById('providerView').value = state.providerView;
+  const brand = state.providerView === 'both' ? 'Claude + Codex' : state.providerView === 'claude' ? 'Claude' : 'Codex';
+  document.title = `${brand} · ${tr('Ritmo de Uso')}`;
+  document.getElementById('providerBrand').textContent = `${state.providerView === 'claude' ? 'CLAUDE CODE' : brand.toUpperCase()} · LOCAL`;
+  document.getElementById('claudeCurveEyebrow').textContent = tr(state.providerView === 'claude' ? 'RITMO SEMANAL' : 'CLAUDE · RITMO SEMANAL');
+  document.getElementById('claudeActivityEyebrow').textContent = state.providerView === 'claude' ? tr('ATIVIDADE LOCAL') : 'CLAUDE · LOCAL';
+}
+
 function quotaSamples(samples, limit) {
   const reset = Date.parse(limit?.resets_at);
   const duration = (limit?.window_minutes || 10080) * 60000;
@@ -34,6 +46,8 @@ function providerStatus(payload) {
 
 function renderProviders() {
   document.getElementById('claudeSync').textContent = providerStatus(state.limits);
+  if (state.providerView === 'both' && state.data) renderProviderActivity();
+  if (!providerEnabled('codex')) return;
   const { activity, limits } = state.codex || {};
   document.getElementById('codexSync').textContent = providerStatus(limits);
   const root = document.getElementById('codexLimits');
@@ -63,7 +77,6 @@ function renderProviders() {
     `<article class="metric panel"><span>${label}</span><strong>${activity?.ok ? formatTokens(totals[key]) : '—'}</strong><small>${key === 'thinking_tokens' ? tr('parte do output; não somar novamente') : tr('no intervalo selecionado')}</small></article>`).join('');
   renderRanking('codexModels', activity?.models || [], 'model', true);
   renderRanking('codexSessions', activity?.sessions || [], 'session', true);
-  renderProviderActivity();
 }
 
 function renderCodexCurve() {

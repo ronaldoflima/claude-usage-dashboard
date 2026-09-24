@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-test('both providers render, switch language/mode, and reload without syncing', async () => {
+for (const initialView of ['both', 'claude', 'codex']) test(`${initialView}: saved view, rendering and provider-scoped sync`, async () => {
   const nodes = new Map();
   function node(id) {
     if (!nodes.has(id)) nodes.set(id, {
@@ -22,7 +22,7 @@ test('both providers render, switch language/mode, and reload without syncing', 
     getElementById(id) { assert.ok(nodes.has(id), `Missing HTML id ${id}`); return node(id); },
     createElement() { return { set textContent(s) { this.innerHTML = String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;'); } }; },
     createTreeWalker() { return { nextNode() { return false; } }; },
-    querySelectorAll() { return []; }, documentElement: {},
+    querySelectorAll() { return []; }, documentElement: {}, body: { dataset: {} },
   };
   const now = Date.now();
   const reset = new Date(now + 3 * 86400000).toISOString();
@@ -37,10 +37,13 @@ test('both providers render, switch language/mode, and reload without syncing', 
     limits: [{ key: 'codex:secondary', label: 'codex', bucket: 'codex', kind: 'weekly_all',
       window_minutes: 10080, utilization: 40, resets_at: reset }] };
   const requests = [];
+  const saved = new Map([['providerView', initialView]]);
+  let gate = null;
   const context = vm.createContext({ document, NodeFilter: { SHOW_TEXT: 4 }, Intl, Date, console,
-    localStorage: { getItem() { return null; }, setItem() {} }, setInterval() {}, clearInterval() {},
+    localStorage: { getItem(key) { return saved.get(key) ?? null; }, setItem(key, value) { saved.set(key, value); } }, setInterval() {}, clearInterval() {},
     fetch: async url => {
       requests.push(url);
+      if (gate) await gate;
       const response = url.includes('limits') ? limits : url.includes('profile') ? profile
         : url.includes('snapshots') ? { ok: true, claude: [], codex: [] } : usage;
       return { json: async () => response };
@@ -50,8 +53,11 @@ test('both providers render, switch language/mode, and reload without syncing', 
     vm.runInContext(fs.readFileSync(path.join(__dirname, '../static', name), 'utf8'), context, { filename: name });
   }
   await new Promise(resolve => setImmediate(resolve));
-  assert.ok(requests.length >= 7);
+  assert.equal(document.body.dataset.providerView, initialView);
+  if (initialView === 'claude') assert.ok(requests.every(url => !url.includes('/api/codex/')));
+  if (initialView === 'codex') assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
   assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
+  await node('providerView').listeners.change({ target: { value: 'both' } });
   assert.match(node('codexLimits').innerHTML, /40.0%/);
   assert.match(node('limits').innerHTML, /40%/);
   assert.equal(vm.runInContext('paceFor({...state.codex.limits.limits[0], utilization: 0}, state.codex.activity.profile, state.codex.limits.fetched_at).projectedMs', context), null);
@@ -66,4 +72,32 @@ test('both providers render, switch language/mode, and reload without syncing', 
   vm.runInContext('state.codex = { activity: {ok: false}, limits: {ok: false} }; renderProviders()', context);
   assert.match(node('codexLimits').innerHTML, /indisponível/);
   assert.match(node('limits').innerHTML, /40%/);
+  for (const provider of ['claude', 'codex', 'both']) {
+    requests.length = 0;
+    await node('providerView').listeners.change({ target: { value: provider } });
+    assert.equal(saved.get('providerView'), provider);
+    assert.equal(document.body.dataset.providerView, provider);
+    assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
+    requests.length = 0;
+    await vm.runInContext('load(null, true, true)', context);
+    if (provider === 'claude') {
+      assert.ok(requests.every(url => !url.includes('/api/codex/')));
+      assert.equal(node('providerBrand').textContent, 'CLAUDE CODE · LOCAL');
+      assert.equal(node('claudeCurveEyebrow').textContent, 'RITMO SEMANAL');
+      assert.equal(node('claudeActivityEyebrow').textContent, 'ATIVIDADE LOCAL');
+    }
+    if (provider === 'codex') assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
+    assert.ok(requests.some(url => url.includes('force=1')));
+  }
+  // A selection made during an in-flight sync is queued as a cache-only read.
+  let release;
+  gate = new Promise(resolve => { release = resolve; });
+  const pending = vm.runInContext('load(null, true)', context);
+  node('providerView').listeners.change({ target: { value: 'codex' } });
+  requests.length = 0;
+  gate = null; release();
+  await pending;
+  assert.equal(document.body.dataset.providerView, 'codex');
+  assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
+  assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
 });

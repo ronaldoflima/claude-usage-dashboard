@@ -10,12 +10,18 @@
   <main>
     <header class="topbar">
       <div>
-        <p class="eyebrow">CLAUDE + CODEX · LOCAL</p>
+        <p id="providerBrand" class="eyebrow">CLAUDE + CODEX · LOCAL</p>
         <h1>Ritmo de Uso</h1>
         <p class="subtitle">Limites oficiais e atividade local, sem ler o conteúdo das conversas.</p>
       </div>
       <div class="topbar-actions">
         <div class="header-toolbar">
+          <span class="compact-select">
+            <select id="providerView" data-i18n-aria="Ferramentas exibidas" aria-label="Visible tools">
+              <option value="both">Ambos</option><option value="claude">Claude</option><option value="codex">Codex</option>
+            </select>
+            <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+          </span>
           <div class="status"><span class="pulse" aria-hidden="true"></span><span id="updated">carregando…</span></div>
           <div class="sync-controls">
             <span class="compact-select">
@@ -64,20 +70,20 @@
       <p id="paceModeNote" class="curve-note" aria-live="polite"></p>
     </section>
     <div class="provider-columns">
-      <section class="provider-section" aria-labelledby="claudeTitle">
+      <section class="provider-section" data-provider="claude" aria-labelledby="claudeTitle">
         <div class="section-head"><h2 id="claudeTitle">Claude</h2><span id="claudeSync" class="provider-status"></span></div>
         <section id="limits" class="limit-grid" data-i18n-aria="Limites do plano" aria-label="Plan limits"></section>
       </section>
-      <section class="provider-section codex-section" aria-labelledby="codexTitle">
+      <section class="provider-section codex-section" data-provider="codex" aria-labelledby="codexTitle">
         <div class="section-head"><h2 id="codexTitle">Codex</h2><span id="codexSync" class="provider-status"></span></div>
         <section id="codexLimits" class="limit-grid" aria-label="Codex limits"></section>
       </section>
     </div>
 
     <div class="provider-columns">
-    <section class="panel weekly-curve-panel">
+    <section class="panel weekly-curve-panel" data-provider="claude">
       <div class="section-head">
-        <div><p class="eyebrow">CLAUDE · RITMO SEMANAL</p><h2>Curva esperada × uso desta semana</h2></div>
+        <div><p id="claudeCurveEyebrow" class="eyebrow">CLAUDE · RITMO SEMANAL</p><h2>Curva esperada × uso desta semana</h2></div>
         <span id="weeklyCurveSummary" class="curve-summary"></span>
       </div>
       <div class="curve-legend">
@@ -88,7 +94,7 @@
       <div id="weeklyCurve" class="weekly-curve" role="img" data-i18n-aria="Curva acumulada de uso semanal" aria-label="Cumulative weekly usage curve"></div>
       <p class="curve-note">A curva pessoal usa somente ciclos encerrados. A linha atual vem dos tokens locais e é calibrada pelo percentual oficial mais recente.</p>
     </section>
-    <section class="panel weekly-curve-panel codex-section">
+    <section class="panel weekly-curve-panel codex-section" data-provider="codex">
       <div class="section-head"><div><p class="eyebrow">CODEX · RITMO SEMANAL</p><h2>Curva esperada × uso observado</h2></div></div>
       <div class="curve-legend"><span><i class="expected-dot"></i>Curva esperada</span><span><i class="actual-dot"></i>Snapshots oficiais</span><span><i class="projection-dot"></i>Projeção</span></div>
       <div id="codexCurve" class="weekly-curve" role="img" aria-label="Codex weekly usage"></div>
@@ -96,20 +102,20 @@
     </section>
     </div>
 
-    <section class="panel comparison-panel">
+    <section class="panel comparison-panel" data-provider="both">
       <div class="section-head"><div><p class="eyebrow">CLAUDE + CODEX</p><h2>Atividade no mesmo intervalo</h2></div><p class="chart-note">Tokens são atividade, não equivalência de custo ou cota.</p></div>
       <div id="providerActivity"></div>
     </section>
 
-    <section class="codex-section metrics-section" aria-labelledby="codexActivityTitle">
+    <section class="codex-section metrics-section" data-provider="codex" aria-labelledby="codexActivityTitle">
       <div class="section-head"><div><p class="eyebrow">CODEX · LOCAL</p><h2 id="codexActivityTitle">Atividade por modelo e sessão</h2></div><p class="chart-note">Somente registros deste dispositivo. Cache já está incluído na entrada do Codex e é separado abaixo.</p></div>
       <div id="codexMetrics" class="metric-grid"></div>
       <div class="split"><article class="panel ranking"><h2>Volume por modelo</h2><div id="codexModels"></div></article><article class="panel ranking"><h2>Volume por sessão</h2><div id="codexSessions"></div></article></div>
     </section>
 
-    <section class="metrics-section" aria-labelledby="metricsTitle">
+    <section class="metrics-section" data-provider="claude" aria-labelledby="metricsTitle">
       <div class="section-head metrics-head">
-        <div><p class="eyebrow">CLAUDE · LOCAL</p><h2 id="metricsTitle">O que os contadores significam</h2></div>
+        <div><p id="claudeActivityEyebrow" class="eyebrow">CLAUDE · LOCAL</p><h2 id="metricsTitle">O que os contadores significam</h2></div>
         <p class="metrics-disclaimer">Estes tokens explicam a atividade local, não a porcentagem oficial da cota.</p>
       </div>
       <div class="metric-grid">
@@ -124,7 +130,7 @@
       <div class="activity-counts"><span><strong id="sessions">—</strong> sessões ativas</span><span><strong id="messages">—</strong> respostas únicas</span><span>no intervalo selecionado</span></div>
     </section>
 
-    <section class="panel chart-panel">
+    <section class="panel chart-panel" data-provider="claude">
       <div class="section-head">
         <div><p class="eyebrow">LINHA DO TEMPO</p><h2>Composição da atividade</h2></div>
         <p class="chart-note">As quatro parcelas são exibidas juntas. Thinking já está contido em output.</p>
@@ -133,7 +139,7 @@
       <div id="timeline" class="timeline"></div>
     </section>
 
-    <section class="split">
+    <section class="split" data-provider="claude">
       <article class="panel ranking">
         <div class="section-head"><div><p class="eyebrow">MODELOS</p><h2>Volume por modelo</h2></div></div>
         <div id="models"></div>
@@ -144,7 +150,7 @@
       </article>
     </section>
 
-    <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth · <code>CODEX_HOME</code> + Codex App Server</span><span id="coverage"></span></footer>
+    <footer><span><span data-provider="claude">Fonte: <code>~/.claude/projects</code> + Anthropic OAuth Usage</span><span data-provider="both"> · </span><span data-provider="codex"><code>CODEX_HOME</code> + Codex App Server</span></span><span id="coverage"></span></footer>
   </main>
   <script src="/i18n.js"></script>
   <script src="/pace-profile.js"></script>

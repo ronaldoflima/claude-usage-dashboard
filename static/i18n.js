@@ -32,6 +32,8 @@ const TRANSLATIONS = {
   }
 };
 const DYNAMIC = {
+  'Ambos': ['Both', 'Ambos'],
+  'Ferramentas exibidas': ['Visible tools', 'Herramientas visibles'],
   'CLAUDE · RITMO SEMANAL': ['CLAUDE · WEEKLY PACE', 'CLAUDE · RITMO SEMANAL'],
   'CODEX · RITMO SEMANAL': ['CODEX · WEEKLY PACE', 'CODEX · RITMO SEMANAL'],
   'Curva esperada × uso observado': ['Expected curve × observed usage', 'Curva esperada × uso observado'],
