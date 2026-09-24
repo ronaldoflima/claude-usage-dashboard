@@ -1,14 +1,39 @@
 /* Provider-specific data stays separate; quota percentages are never added. */
-function providerEnabled(provider) { return state.providerView === 'both' || state.providerView === provider; }
+function providerEnabled(provider) { return state.collection[provider]; }
 
 function renderProviderView() {
   document.body.dataset.providerView = state.providerView;
-  document.getElementById('providerView').value = state.providerView;
+  for (const [view, id] of [['both', 'viewBoth'], ['claude', 'viewClaude'], ['codex', 'viewCodex']]) {
+    document.getElementById(id).setAttribute('aria-pressed', String(state.providerView === view));
+  }
   const brand = state.providerView === 'both' ? 'Claude + Codex' : state.providerView === 'claude' ? 'Claude' : 'Codex';
   document.title = `${brand} · ${tr('Ritmo de Uso')}`;
   document.getElementById('providerBrand').textContent = `${state.providerView === 'claude' ? 'CLAUDE CODE' : brand.toUpperCase()} · LOCAL`;
   document.getElementById('claudeCurveEyebrow').textContent = tr(state.providerView === 'claude' ? 'RITMO SEMANAL' : 'CLAUDE · RITMO SEMANAL');
   document.getElementById('claudeActivityEyebrow').textContent = state.providerView === 'claude' ? tr('ATIVIDADE LOCAL') : 'CLAUDE · LOCAL';
+}
+
+function renderOverview() {
+  document.getElementById('overview').innerHTML = [
+    ['claude', 'Claude', state.limits, state.profile],
+    ['codex', 'Codex', state.codex?.limits, state.codex?.activity?.profile],
+  ].map(([provider, name, payload, profile]) => {
+    const limits = payload?.limits || [];
+    const weekly = limits.find(limit => limit.kind === 'weekly_all' && (!limit.bucket || limit.bucket === 'codex'));
+    const short = limits.find(limit => limit.kind === 'session' && (!limit.bucket || limit.bucket === 'codex'));
+    const fresh = payload?.ok && !payload.stale && payload.source !== 'codex_local_snapshot';
+    const pace = fresh && weekly ? paceFor(weekly, profile, payload.fetched_at) : null;
+    const limitRow = (label, limit) => `<div class="overview-row"><span>${tr(label)}</span><div>${limit
+      ? `<strong>${limit.utilization.toFixed(0)}%</strong><small>${tr('reset em')} ${countdown(limit.resets_at)} · ${esc(formatDate(limit.resets_at))}</small>`
+      : `<span>—</span><small>${tr('Não informado')}</small>`}</div></div>`;
+    return `<article class="overview-card panel ${provider === 'codex' ? 'codex-section' : ''}">
+      <h2>${name}</h2><p class="provider-status">${esc(providerStatus(payload))}${providerEnabled(provider) ? '' : ` · ${tr('Coleta pausada')}`}</p>
+      ${limitRow('Curto prazo', short)}${limitRow('Semanal', weekly)}
+      <div class="overview-row"><span>${tr('Ritmo semanal')}</span><div>${pace ? `<span class="pace-badge ${pace.className}">${pace.label}</span><small>${pace.historical ? paceModeLabel() : tr('Estimativa linear')}</small>` : '—'}</div></div>
+      <div class="overview-row"><span>${tr('Até o reset')}</span><div>${pace ? `<span>${pace.reachesBeforeReset ? tr('Pode atingir o limite') : tr('Dentro da cota')}</span><small>${tr('Estimativa na data do snapshot')}</small>` : `<span>${tr('Sem estimativa confiável')}</span>`}</div></div>
+      <button type="button" data-detail="${provider}">${tr('Ver detalhes')} →</button>
+    </article>`;
+  }).join('');
 }
 
 function quotaSamples(samples, limit) {
@@ -46,8 +71,7 @@ function providerStatus(payload) {
 
 function renderProviders() {
   document.getElementById('claudeSync').textContent = providerStatus(state.limits);
-  if (state.providerView === 'both' && state.data) renderProviderActivity();
-  if (!providerEnabled('codex')) return;
+  if (state.providerView !== 'codex') return;
   const { activity, limits } = state.codex || {};
   document.getElementById('codexSync').textContent = providerStatus(limits);
   const root = document.getElementById('codexLimits');
@@ -118,23 +142,6 @@ function renderCodexCurve() {
   }).join('');
   root.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="presentation">${grid}${labels}<path d="${path(expected)}" class="curve-expected-line"/><path d="${observedPath}" class="curve-actual-line"/><path d="${path(projection)}" class="curve-projection-line"/>${samples.map(s => `<circle cx="${x(s.observed_ms)}" cy="${y(s.utilization)}" r="3" class="curve-now-point"><title>${esc(formatDate(s.observed_ms))} · ${s.utilization}%</title></circle>`).join('')}</svg>`;
   note.textContent = `${limit.label} · ${profile ? `${paceModeLabel()} · ${profile.sample_hours} ${tr('horas com dados')}` : tr('Estimativa linear')} · ${samples.length} ${tr('snapshots neste ciclo')}. ${tr('Sem interpolação em lacunas maiores que 30 min. Projeção não é medição.')}`;
-}
-
-function renderProviderActivity() {
-  const providers = [['Claude', state.data, '#d97757'], ['Codex', state.codex?.activity, '#79b7b1']];
-  const start = state.data.range.start_ms, end = state.data.range.end_ms;
-  const count = 60;
-  const rows = providers.map(([name, data, color]) => {
-    const buckets = Array(count).fill(0);
-    for (const event of data?.timeline || []) {
-      const index = Math.min(count - 1, Math.max(0, Math.floor((event.bucket_ms - start) / (end - start) * count)));
-      buckets[index] += event.total_tokens;
-    }
-    return { name, data, color, buckets };
-  });
-  const max = Math.max(1, ...rows.flatMap(row => row.buckets));
-  document.getElementById('providerActivity').innerHTML = rows.map(({ name, data, color, buckets }) =>
-    `<div class="provider-activity-row"><span>${name}<small>${data?.totals?.sessions || 0} ${tr('sessões ativas')}</small></span><svg class="activity-spark" viewBox="0 0 600 60" preserveAspectRatio="none" role="img" aria-label="${name}">${buckets.map((n, i) => `<rect x="${i * 10}" y="${60 - n / max * 60}" width="8" height="${n / max * 60}" fill="${color}"><title>${esc(formatDate(start + i / count * (end - start)))} · ${formatTokens(n)}</title></rect>`).join('')}</svg><strong>${data?.ok ? formatTokens(data.totals.total_tokens) : '—'}<small>${tr('processados')}</small></strong></div>`).join('');
 }
 
 if (typeof module !== 'undefined') module.exports = { quotaSamples };

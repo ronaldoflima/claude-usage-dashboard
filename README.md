@@ -2,17 +2,21 @@
 
 A local dashboard for monitoring Claude and Codex plan limits and understanding
 which sessions and models account for activity over a selected time range.
-Both providers are visible together, with independent quotas, reset times,
-pace estimates, and local rankings. Percentages are never added together.
+The **Overview / Claude / Codex** tabs separate quick decisions from detailed
+analysis. Overview shows two compact cards: short-term and weekly quotas, resets,
+weekly pace, and projection, with **View details** links. Missing limits are
+explicitly marked; percentages are never added together. Detailed charts and
+rankings appear only in the individual tabs. Claude retains its original
+full-width layout and responsive limit-card grid.
 
-The header's **Both / Claude / Codex** selector remembers your choice in this
-browser. **Claude** restores the original full-width layout: limit cards in a
-responsive grid, then the weekly curve, metrics, timeline, and rankings. Codex
-sections and the comparison panel are hidden. **Codex** shows only Codex.
-Only selected providers are loaded and synchronized by this page. Switching
-views reads cached data; it does not request an official sync or delete history.
-An already-running request may finish, and other open tabs keep their own sync
-selection until reloaded.
+The selected tab is remembered in this browser. Navigation performs no network
+requests and does not affect collection. Both providers synchronize by default
+on the selected interval while the page is open, regardless of the active tab.
+The separate **Synchronization** menu lets you pause either provider without
+deleting history. Paused providers can still display cached data; neither their
+local logs nor official quotas are refreshed, even by **Sync now**. Enabling a
+provider does not immediately sync. An in-flight request may finish; other open
+tabs retain their own collection settings until reloaded.
 
 ## Codex preview
 
@@ -99,8 +103,8 @@ official read time, not the page-load time. The personal expected profiles still
 use tokens, **not learned quota weights**; snapshot-based profile training is a
 future improvement requiring sufficiently complete cycles of observations.
 
-The combined activity chart uses the same time range and vertical scale for
-both providers. Detail sections remain separate and show all supported counters.
+Detail tabs share the time-range controls and show each provider's supported
+counters without combining quota percentages or token volumes.
 
 <img width="1506" height="834" alt="image" src="https://github.com/user-attachments/assets/08d407cd-bb01-4266-8cd0-636258c89f78" />
 

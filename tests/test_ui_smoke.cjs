@@ -54,16 +54,19 @@ for (const initialView of ['both', 'claude', 'codex']) test(`${initialView}: sav
   }
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(document.body.dataset.providerView, initialView);
-  if (initialView === 'claude') assert.ok(requests.every(url => !url.includes('/api/codex/')));
-  if (initialView === 'codex') assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
+  assert.ok(requests.some(url => url.includes('/api/codex/')));
+  assert.ok(requests.some(url => url.includes('/api/dashboard')));
   assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
-  await node('providerView').listeners.change({ target: { value: 'both' } });
+  node('viewBoth').listeners.click();
+  assert.match(node('overview').innerHTML, /Claude/);
+  assert.match(node('overview').innerHTML, /Codex/);
+  assert.ok(!node('overview').innerHTML.includes('<svg'));
+  node('viewClaude').listeners.click();
+  node('viewCodex').listeners.click();
   assert.match(node('codexLimits').innerHTML, /40.0%/);
   assert.match(node('limits').innerHTML, /40%/);
   assert.equal(vm.runInContext('paceFor({...state.codex.limits.limits[0], utilization: 0}, state.codex.activity.profile, state.codex.limits.fetched_at).projectedMs', context), null);
   assert.match(node('codexCurve').innerHTML, /<svg/);
-  assert.match(node('providerActivity').innerHTML, /Claude/);
-  assert.match(node('providerActivity').innerHTML, /Codex/);
   assert.ok(!node('codexSessions').innerHTML.includes('<script>'));
   node('language').listeners.change({ target: { value: 'pt-BR' } });
   node('paceMode').listeners.change({ target: { value: 'equal_weekdays' } });
@@ -74,30 +77,41 @@ for (const initialView of ['both', 'claude', 'codex']) test(`${initialView}: sav
   assert.match(node('limits').innerHTML, /40%/);
   for (const provider of ['claude', 'codex', 'both']) {
     requests.length = 0;
-    await node('providerView').listeners.change({ target: { value: provider } });
+    node({both: 'viewBoth', claude: 'viewClaude', codex: 'viewCodex'}[provider]).listeners.click();
     assert.equal(saved.get('providerView'), provider);
     assert.equal(document.body.dataset.providerView, provider);
-    assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
+    assert.equal(requests.length, 0);
     requests.length = 0;
     await vm.runInContext('load(null, true, true)', context);
     if (provider === 'claude') {
-      assert.ok(requests.every(url => !url.includes('/api/codex/')));
       assert.equal(node('providerBrand').textContent, 'CLAUDE CODE · LOCAL');
       assert.equal(node('claudeCurveEyebrow').textContent, 'RITMO SEMANAL');
       assert.equal(node('claudeActivityEyebrow').textContent, 'ATIVIDADE LOCAL');
     }
-    if (provider === 'codex') assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
-    assert.ok(requests.some(url => url.includes('force=1')));
+    assert.ok(requests.includes('/api/codex/limits?force=1'));
+    assert.ok(requests.includes('/api/limits?force=1'));
   }
-  // A selection made during an in-flight sync is queued as a cache-only read.
+  // Pausing collection is independent of navigation and persists separately.
+  node('collectClaude').listeners.change({target: {checked: false}});
+  assert.equal(JSON.parse(saved.get('collectionProviders')).claude, false);
+  requests.length = 0;
+  await vm.runInContext('load(null, true, true)', context);
+  assert.ok(!requests.includes('/api/limits?force=1'));
+  assert.ok(requests.includes('/api/limits'));
+  assert.ok(requests.includes('/api/codex/limits?force=1'));
+  node('collectCodex').listeners.change({target: {checked: false}});
+  requests.length = 0;
+  await vm.runInContext('load(null, true, true)', context);
+  assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
+  // Navigation during an in-flight update does not schedule extra work.
   let release;
   gate = new Promise(resolve => { release = resolve; });
   const pending = vm.runInContext('load(null, true)', context);
-  node('providerView').listeners.change({ target: { value: 'codex' } });
+  node('viewCodex').listeners.click();
   requests.length = 0;
   gate = null; release();
   await pending;
   assert.equal(document.body.dataset.providerView, 'codex');
   assert.ok(requests.every(url => !url.includes('sync=1') && !url.includes('force=1')));
-  assert.ok(requests.every(url => !/^\/api\/(dashboard|limits|profile)/.test(url)));
+  assert.equal(vm.runInContext('state.pendingLoad', context), undefined);
 });

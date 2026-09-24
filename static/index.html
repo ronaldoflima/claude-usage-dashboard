@@ -16,12 +16,15 @@
       </div>
       <div class="topbar-actions">
         <div class="header-toolbar">
-          <span class="compact-select">
-            <select id="providerView" data-i18n-aria="Ferramentas exibidas" aria-label="Visible tools">
-              <option value="both">Ambos</option><option value="claude">Claude</option><option value="codex">Codex</option>
-            </select>
-            <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
-          </span>
+          <details class="collection-settings">
+            <summary>Sincronização</summary>
+            <div class="collection-options">
+              <p>Coletar dados de</p>
+              <label><input id="collectClaude" type="checkbox" checked> Claude</label>
+              <label><input id="collectCodex" type="checkbox" checked> Codex</label>
+              <small>Independente da aba aberta. Não apaga o histórico.</small>
+            </div>
+          </details>
           <div class="status"><span class="pulse" aria-hidden="true"></span><span id="updated">carregando…</span></div>
           <div class="sync-controls">
             <span class="compact-select">
@@ -47,6 +50,13 @@
         <span id="syncStatus" role="status"></span>
       </div>
     </header>
+
+    <nav class="view-tabs" data-i18n-aria="Visualização" aria-label="View">
+      <button id="viewBoth" type="button" aria-pressed="true">Visão geral</button>
+      <button id="viewClaude" type="button" aria-pressed="false">Claude</button>
+      <button id="viewCodex" type="button" aria-pressed="false">Codex</button>
+    </nav>
+    <section id="overview" class="overview-grid" aria-label="Overview"></section>
 
     <section class="controls panel">
       <div class="presets" id="presets">
@@ -101,11 +111,6 @@
       <p id="codexCurveNote" class="curve-note"></p>
     </section>
     </div>
-
-    <section class="panel comparison-panel" data-provider="both">
-      <div class="section-head"><div><p class="eyebrow">CLAUDE + CODEX</p><h2>Atividade no mesmo intervalo</h2></div><p class="chart-note">Tokens são atividade, não equivalência de custo ou cota.</p></div>
-      <div id="providerActivity"></div>
-    </section>
 
     <section class="codex-section metrics-section" data-provider="codex" aria-labelledby="codexActivityTitle">
       <div class="section-head"><div><p class="eyebrow">CODEX · LOCAL</p><h2 id="codexActivityTitle">Atividade por modelo e sessão</h2></div><p class="chart-note">Somente registros deste dispositivo. Cache já está incluído na entrada do Codex e é separado abaixo.</p></div>

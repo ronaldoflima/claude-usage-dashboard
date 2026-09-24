@@ -32,6 +32,17 @@ const TRANSLATIONS = {
   }
 };
 const DYNAMIC = {
+  'Visão geral': ['Overview', 'Resumen'], 'Visualização': ['View', 'Vista'],
+  'Sincronização': ['Synchronization', 'Sincronización'],
+  'Coletar dados de': ['Collect data from', 'Recopilar datos de'],
+  'Independente da aba aberta. Não apaga o histórico.': ['Independent of the open tab. History is preserved.', 'Independiente de la pestaña abierta. Conserva el historial.'],
+  'Curto prazo': ['Short-term', 'Corto plazo'], 'Não informado': ['Not reported', 'No informado'],
+  'Coleta pausada': ['Collection paused', 'Recopilación pausada'],
+  'Até o reset': ['Until reset', 'Hasta el reinicio'],
+  'Pode atingir o limite': ['May reach the limit', 'Puede alcanzar el límite'],
+  'Dentro da cota': ['Within quota', 'Dentro de la cuota'],
+  'Sem estimativa confiável': ['No reliable estimate', 'Sin estimación fiable'],
+  'Ver detalhes': ['View details', 'Ver detalles'],
   'Ambos': ['Both', 'Ambos'],
   'Ferramentas exibidas': ['Visible tools', 'Herramientas visibles'],
   'CLAUDE · RITMO SEMANAL': ['CLAUDE · WEEKLY PACE', 'CLAUDE · RITMO SEMANAL'],

@@ -1,6 +1,8 @@
 const state = { range: '5h', custom: null, data: null, limits: null, profile: null, weeklyData: null };
 state.providerView = 'both';
 try { const saved = localStorage.getItem('providerView'); if (['both', 'claude', 'codex'].includes(saved)) state.providerView = saved; } catch {}
+state.collection = { claude: true, codex: true };
+try { const saved = JSON.parse(localStorage.getItem('collectionProviders')); for (const provider of ['claude', 'codex']) if (typeof saved?.[provider] === 'boolean') state.collection[provider] = saved[provider]; } catch {}
 state.paceMode = 'historical';
 try { if (localStorage.getItem('paceMode') === 'equal_weekdays') state.paceMode = 'equal_weekdays'; } catch {}
 function selectedProfileSlots(profile, startMs) { return alignedPaceSlots(profile, state.paceMode, startMs); }
@@ -115,16 +117,19 @@ async function load(custom, sync = false, force = false) {
   const start = selected?.start ?? end - DURATIONS[state.range];
   try {
     const jobs = [];
-    if (providerEnabled('claude')) jobs.push((async () => {
+    jobs.push((async () => {
+      const claudeSync = sync && providerEnabled('claude'), claudeForce = force && providerEnabled('claude');
       const [usageResponse, limitsResponse, profileResponse] = await Promise.all([
-        fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`),
-        fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile')
+        fetch(`/api/dashboard?from=${start}&to=${end}${claudeSync ? '&sync=1' : ''}`),
+        fetch(`/api/limits${claudeForce ? '?force=1' : claudeSync ? '?sync=1' : ''}`), fetch('/api/profile')
       ]);
       state.data = await usageResponse.json(); state.limits = await limitsResponse.json(); state.profile = await profileResponse.json();
       if (!state.data.ok) throw new Error(state.data.error);
-      if (providerEnabled('claude')) state.weeklyData = await loadWeeklyData();
-    })());
-    if (providerEnabled('codex')) jobs.push(loadCodex(start, end, sync, force));
+      state.weeklyData = await loadWeeklyData();
+    })().catch(error => {
+      state.limits = { ...state.limits, ok: false, stale: true, error: error.message };
+    }));
+    jobs.push(loadCodex(start, end, sync && providerEnabled('codex'), force && providerEnabled('codex')));
     const completed = await Promise.allSettled(jobs);
     const failed = completed.find(result => result.status === 'rejected');
     if (failed) throw failed.reason;
@@ -147,7 +152,11 @@ async function load(custom, sync = false, force = false) {
 
 function render() {
   renderProviderView(); renderPaceMode();
-  if (providerEnabled('claude') && state.data?.ok) renderClaude();
+  if (state.providerView === 'claude') {
+    if (state.data?.ok) renderClaude();
+    else renderLimits();
+  }
+  if (state.providerView === 'both') renderOverview();
   renderProviders();
   const coverage = state.providerView === 'codex' ? state.codex?.activity?.coverage : state.data?.coverage;
   document.getElementById('coverage').textContent = coverage?.last_event_ms ? `${tr('último evento')} ${formatDate(coverage.last_event_ms)}` : tr('sem eventos');
@@ -332,12 +341,27 @@ document.getElementById('paceMode').addEventListener('change', event => {
   render();
 });
 renderProviderView(); renderPaceMode();
-document.getElementById('providerView').addEventListener('change', event => {
-  state.providerView = ['both', 'claude', 'codex'].includes(event.target.value) ? event.target.value : 'both';
+function selectView(view) {
+  state.providerView = ['both', 'claude', 'codex'].includes(view) ? view : 'both';
   try { localStorage.setItem('providerView', state.providerView); } catch {}
   render(); renderSyncTimestamp();
-  return load(); // Switching tools reads cache only; never triggers an official sync.
+  // Navigation uses already-loaded state and does not change collection.
+}
+for (const [view, id] of [['both', 'viewBoth'], ['claude', 'viewClaude'], ['codex', 'viewCodex']]) {
+  document.getElementById(id).addEventListener('click', () => selectView(view));
+}
+document.getElementById('overview').addEventListener('click', event => {
+  const button = event.target.closest('[data-detail]');
+  if (button) selectView(button.dataset.detail);
 });
+for (const [provider, id] of [['claude', 'collectClaude'], ['codex', 'collectCodex']]) {
+  document.getElementById(id).checked = providerEnabled(provider);
+  document.getElementById(id).addEventListener('change', event => {
+    state.collection[provider] = event.target.checked;
+    try { localStorage.setItem('collectionProviders', JSON.stringify(state.collection)); } catch {}
+    render(); renderSyncTimestamp();
+  });
+}
 document.getElementById('presets').addEventListener('click', event => {
   const button = event.target.closest('[data-range]'); if (!button) return;
   state.range = button.dataset.range; state.custom = null; document.querySelectorAll('[data-range]').forEach(x => x.classList.toggle('active', x === button)); load();
