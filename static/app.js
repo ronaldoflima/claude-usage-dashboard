@@ -1,31 +1,32 @@
 const state = { range: '5h', custom: null, data: null, limits: null, profile: null, weeklyData: null };
 state.paceMode = 'historical';
 try { if (localStorage.getItem('paceMode') === 'equal_weekdays') state.paceMode = 'equal_weekdays'; } catch {}
-function selectedProfileSlots(profile) { return paceProfileSlots(profile, state.paceMode); }
-function paceModeLabel() { return state.paceMode === 'equal_weekdays' ? 'Seg–sex equilibrado' : 'Perfil histórico'; }
+function selectedProfileSlots(profile, startMs) { return alignedPaceSlots(profile, state.paceMode, startMs); }
+function paceModeLabel() { return state.paceMode === 'equal_weekdays' ? tr('Seg–sex equilibrado') : tr('Perfil histórico'); }
 function renderPaceMode() {
   document.getElementById('paceMode').value = state.paceMode;
   const share = state.profile?.weekly?.business_days_share;
   document.getElementById('paceModeNote').textContent = state.paceMode === 'equal_weekdays'
-    ? `Mesmo peso para cada dia útil${Number.isFinite(share) ? ` (${(share / 5).toFixed(2)}% da semana)` : ''}, com a média por horário. Sábado e domingo preservados. É uma hipótese de planejamento, não uma correção do histórico.`
-    : 'Distribuição histórica por dia e horário, incluindo períodos em que você pode ter economizado cota.';
-  document.getElementById('expectedCurveLabel').textContent = `Curva esperada · ${paceModeLabel()}`;
+    ? `${tr("Mesmo peso para cada dia útil")}${Number.isFinite(share) ? ` (${(share / 5).toFixed(2)}% ${tr("da semana")})` : ''}, ${tr("com a média por horário. Sábado e domingo preservados. É uma hipótese de planejamento, não uma correção do histórico.")}`
+    : tr('Distribuição histórica por dia e horário, incluindo períodos em que você pode ter economizado cota.');
+  document.getElementById('expectedCurveLabel').textContent = `${tr("Curva esperada")} · ${paceModeLabel()}`;
 }
 const COLORS = ['#d97757', '#7c9ec7', '#7dbb84', '#dfae57', '#a184c4', '#d7809e', '#79b7b1'];
 const TOKEN_COMPONENTS = [
   { key: 'input_tokens', label: 'Input', color: '#7c9ec7' },
   { key: 'output_tokens', label: 'Output', color: '#7dbb84' },
-  { key: 'cache_creation_tokens', label: 'Escrita em cache', color: '#d97757' },
-  { key: 'cache_read_tokens', label: 'Leitura de cache', color: '#a184c4' },
+  { key: 'cache_creation_tokens', label: tr('Escrita em cache'), color: '#d97757' },
+  { key: 'cache_read_tokens', label: tr('Leitura de cache'), color: '#a184c4' },
 ];
 const DURATIONS = { '15m': 15 * 60e3, '30m': 30 * 60e3, '1h': 60 * 60e3, '5h': 5 * 60 * 60e3, '24h': 24 * 60 * 60e3, '7d': 7 * 24 * 60 * 60e3 };
-const nf = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
-const exact = new Intl.NumberFormat('pt-BR');
+let nf, exact;
+function updateFormatters() { nf = new Intl.NumberFormat(locale(), { notation: 'compact', maximumFractionDigits: 1 }); exact = new Intl.NumberFormat(locale()); }
+updateFormatters();
 
 function formatTokens(value) { return nf.format(value || 0); }
-function formatDate(value) { return new Intl.DateTimeFormat('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
+function formatDate(value) { return new Intl.DateTimeFormat(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
 function countdown(value) {
-  if (!value) return 'reset não informado';
+  if (!value) return tr('reset não informado');
   let seconds = Math.max(0, (new Date(value).getTime() - Date.now()) / 1000);
   const days = Math.floor(seconds / 86400); seconds %= 86400;
   const hours = Math.floor(seconds / 3600); const minutes = Math.floor((seconds % 3600) / 60);
@@ -33,8 +34,8 @@ function countdown(value) {
 }
 function tone(pct) { return pct >= 90 ? '#db6b64' : pct >= 70 ? '#dfae57' : '#7dbb84'; }
 function esc(value) { const node = document.createElement('span'); node.textContent = String(value ?? ''); return node.innerHTML; }
-function profileProgress(profile, elapsedHours) {
-  const slots = selectedProfileSlots(profile);
+function profileProgress(profile, elapsedHours, startMs) {
+  const slots = selectedProfileSlots(profile, startMs);
   if (!Array.isArray(slots) || slots.length !== 168) return null;
   const position = Math.max(0, Math.min(168, elapsedHours));
   const whole = Math.floor(position); const fraction = position - whole;
@@ -42,7 +43,7 @@ function profileProgress(profile, elapsedHours) {
   return Math.min(100, (completed + (whole < 168 ? slots[whole] * fraction : 0)) * 100);
 }
 function profileProjection(profile, targetPercent, startMs) {
-  const slots = selectedProfileSlots(profile);
+  const slots = selectedProfileSlots(profile, startMs);
   if (!Array.isArray(slots) || targetPercent > 100) return null;
   let cumulative = 0;
   for (let slot = 0; slot < slots.length; slot++) {
@@ -63,7 +64,7 @@ function paceFor(limit) {
   const elapsedMs = Math.max(60e3, Math.min(durationMs, now - startMs));
   const remainingMs = Math.max(0, resetMs - now);
   const historical = limit.kind !== 'session' && state.profile?.ok;
-  const historicalExpected = historical ? profileProgress(state.profile, elapsedMs / 36e5) : null;
+  const historicalExpected = historical ? profileProgress(state.profile, elapsedMs / 36e5, startMs) : null;
   const expected = historicalExpected ?? Math.max(0, Math.min(100, elapsedMs / durationMs * 100));
   const actualRate = limit.utilization / (elapsedMs / 36e5);
   const sustainableRate = remainingMs > 0 ? (100 - limit.utilization) / (remainingMs / 36e5) : 0;
@@ -73,10 +74,10 @@ function paceFor(limit) {
     ? profileProjection(state.profile, targetProfile, startMs)
     : actualRate > 0 ? startMs + (100 / actualRate) * 36e5 : null;
   const margin = expected - limit.utilization;
-  let label = 'No ritmo'; let className = 'steady';
-  if (limit.utilization >= 100) { label = 'Limite atingido'; className = 'hot'; }
-  else if (ratio > 1.08) { label = 'Ritmo acelerado'; className = 'hot'; }
-  else if (ratio < .82) { label = 'Ritmo tranquilo'; className = 'cool'; }
+  let label = tr('No ritmo'); let className = 'steady';
+  if (limit.utilization >= 100) { label = tr('Limite atingido'); className = 'hot'; }
+  else if (ratio > 1.08) { label = tr('Ritmo acelerado'); className = 'hot'; }
+  else if (ratio < .82) { label = tr('Ritmo tranquilo'); className = 'cool'; }
   return {
     expected, actualRate, sustainableRate, projectedMs, margin, label, className, historical,
     pressure: ratio,
@@ -84,7 +85,7 @@ function paceFor(limit) {
     reachesBeforeReset: projectedMs && projectedMs < resetMs,
   };
 }
-function clock(value) { return new Intl.DateTimeFormat('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
+function clock(value) { return new Intl.DateTimeFormat(locale(), { weekday: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)); }
 
 async function loadWeeklyData() {
   const weekly = state.limits?.limits?.find(limit => limit.kind === 'weekly_all');
@@ -97,23 +98,35 @@ async function loadWeeklyData() {
   return data.ok ? { ...data, resetMs, startMs, official: weekly.utilization } : null;
 }
 
-async function load(custom) {
+async function load(custom, sync = false, force = false) {
+  if (state.loading) return;
+  state.loading = true;
+  document.getElementById('syncNow').disabled = true;
+  document.getElementById('syncNow').setAttribute('aria-busy', String(sync));
   if (custom) state.custom = custom;
   const selected = state.custom;
   const end = selected?.end ?? Date.now();
   const start = selected?.start ?? end - DURATIONS[state.range];
   try {
     const [usageResponse, limitsResponse, profileResponse] = await Promise.all([
-      fetch(`/api/dashboard?from=${start}&to=${end}`), fetch('/api/limits'), fetch('/api/profile')
+      fetch(`/api/dashboard?from=${start}&to=${end}${sync ? '&sync=1' : ''}`), fetch(`/api/limits${force ? '?force=1' : sync ? '?sync=1' : ''}`), fetch('/api/profile')
     ]);
     state.data = await usageResponse.json(); state.limits = await limitsResponse.json(); state.profile = await profileResponse.json();
     if (!state.data.ok) throw new Error(state.data.error);
     state.weeklyData = await loadWeeklyData();
     render();
-    document.getElementById('updated').textContent = `atualizado ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    document.getElementById('updated').textContent = state.limits.fetched_at
+      ? `${tr('Último sync oficial:')} ${new Date(state.limits.fetched_at).toLocaleString(locale())}`
+      : tr('Sem sync oficial');
+    document.getElementById('syncStatus').textContent = state.limits.error
+      ? `${tr('Sync pendente:')} ${state.limits.error}${state.limits.retry_after_seconds ? ` · ${Math.ceil(state.limits.retry_after_seconds / 60)} min` : ''}` : '';
   } catch (error) {
-    document.getElementById('updated').textContent = 'falha na atualização';
+    document.getElementById('updated').textContent = tr('falha na atualização');
     document.getElementById('limits').innerHTML = `<div class="panel error">${esc(error.message)}</div>`;
+  } finally {
+    state.loading = false;
+    document.getElementById('syncNow').disabled = false;
+    document.getElementById('syncNow').setAttribute('aria-busy', 'false');
   }
 }
 
@@ -128,14 +141,14 @@ function render() {
   document.getElementById('thinkingTokens').textContent = formatTokens(t.thinking_tokens);
   document.getElementById('sessions').textContent = exact.format(t.sessions || 0);
   document.getElementById('messages').textContent = exact.format(t.messages || 0);
-  document.getElementById('coverage').textContent = d.coverage.last_event_ms ? `último evento ${formatDate(d.coverage.last_event_ms)}` : 'sem eventos';
+  document.getElementById('coverage').textContent = d.coverage.last_event_ms ? `${tr("último evento")} ${formatDate(d.coverage.last_event_ms)}` : tr('sem eventos');
   renderPaceMode(); renderLimits(); renderWeeklyCurve(); renderTimeline(); renderRanking('models', d.models, 'model'); renderRanking('sessionList', d.sessions, 'session');
 }
 
 function renderLimits() {
   const root = document.getElementById('limits');
   if (!state.limits?.ok) {
-    root.innerHTML = `<article class="panel error">Limites oficiais indisponíveis: ${esc(state.limits?.error || 'erro desconhecido')}</article>`;
+    root.innerHTML = `<article class="panel error">${tr("Limites oficiais indisponíveis:")} ${esc(state.limits?.error || tr('erro desconhecido'))}</article>`;
     return;
   }
   const primary = state.limits.limits.filter(x => x.kind === 'session' || x.kind === 'weekly_all');
@@ -144,32 +157,32 @@ function renderLimits() {
   root.innerHTML = ordered.map(limit => {
     const pct = Math.max(0, Math.min(100, limit.utilization)); const color = tone(pct);
     const pace = paceFor(limit);
-    const paceMarkup = pace ? `<div class="pace-head"><span class="pace-badge ${pace.className}">${pace.label}</span><span>${pace.historical ? 'ideal do modo' : 'ideal agora'}: ${pace.expected.toFixed(0)}%</span></div>
-      <div class="bar pace-bar" style="--bar-color:${color}"><i style="--value:${pct}%"></i><b style="--target:${pace.expected}%" title="ritmo ideal"></b></div>
-      <div class="pace-grid"><span><small>${pace.historical ? 'Pressão vs padrão' : 'Ritmo médio'}</small><strong>${pace.historical ? pace.pressure.toFixed(2) + 'x' : pace.actualRate.toFixed(1) + '%/h'}</strong></span><span><small>${pace.historical ? 'Folga futura' : 'Pode gastar'}</small><strong>${pace.historical ? pace.futureBudgetRatio.toFixed(2) + 'x' : pace.sustainableRate.toFixed(1) + '%/h'}</strong></span><span><small>Margem</small><strong>${pace.margin >= 0 ? '+' : ''}${pace.margin.toFixed(0)} pp</strong></span></div>
-      <p class="projection ${pace.reachesBeforeReset ? 'warning' : ''}">${pace.reachesBeforeReset ? `Mantendo seu padrão, chega a 100% ${clock(pace.projectedMs)}` : 'Mantendo seu padrão, não chega a 100% antes do reset'}</p>
-      ${pace.historical ? `<p class="profile-source">${paceModeLabel()} · janela de até ${state.profile.lookback_days} dias · ${state.profile.weekly.business_days_share.toFixed(0)}% seg–sex</p>` : ''}` : '';
+    const paceMarkup = pace ? `<div class="pace-head"><span class="pace-badge ${pace.className}">${pace.label}</span><span>${pace.historical ? tr('ideal do modo') : tr('ideal agora')}: ${pace.expected.toFixed(0)}%</span></div>
+      <div class="bar pace-bar" style="--bar-color:${color}"><i style="--value:${pct}%"></i><b style="--target:${pace.expected}%" title="${tr('ritmo ideal')}"></b></div>
+      <div class="pace-grid"><span><small>${pace.historical ? tr('Pressão vs padrão') : tr('Ritmo médio')}</small><strong>${pace.historical ? pace.pressure.toFixed(2) + 'x' : pace.actualRate.toFixed(1) + '%/h'}</strong></span><span><small>${pace.historical ? tr('Folga futura') : tr('Pode gastar')}</small><strong>${pace.historical ? pace.futureBudgetRatio.toFixed(2) + 'x' : pace.sustainableRate.toFixed(1) + '%/h'}</strong></span><span><small>${tr('Margem')}</small><strong>${pace.margin >= 0 ? '+' : ''}${pace.margin.toFixed(0)} pp</strong></span></div>
+      <p class="projection ${pace.reachesBeforeReset ? 'warning' : ''}">${pace.reachesBeforeReset ? `${tr("Mantendo seu padrão, chega a 100%")} ${clock(pace.projectedMs)}` : tr('Mantendo seu padrão, não chega a 100% antes do reset')}</p>
+      ${pace.historical ? `<p class="profile-source">${paceModeLabel()} · ${tr("janela de até")} ${state.profile.lookback_days} ${tr("dias")} · ${state.profile.weekly.business_days_share.toFixed(0)}% ${tr("seg–sex")}</p>` : ''}` : '';
     return `<article class="limit panel" style="--ring-color:${color}">
-      <div class="limit-title"><strong>${esc(limit.label)}</strong><span>plano oficial</span></div>
-      <div class="limit-value"><strong>${limit.utilization.toFixed(limit.utilization % 1 ? 1 : 0)}%</strong><span>utilizado</span></div>
-      <div class="limit-meta"><span>restam ${(100 - pct).toFixed(0)}%</span><span>reset em ${countdown(limit.resets_at)}</span></div>
+      <div class="limit-title"><strong>${esc(limit.kind === 'session' ? tr('Sessão') + (limit.label.includes('5h') ? ' · 5h' : '') : limit.kind.startsWith('weekly') ? tr('Semanal') + (limit.model ? ' · ' + limit.model : limit.label.includes(' · ') ? ' · ' + limit.label.split(' · ').slice(1).join(' · ') : '') : limit.label)}</strong><span>${tr('plano oficial')}</span></div>
+      <div class="limit-value"><strong>${limit.utilization.toFixed(limit.utilization % 1 ? 1 : 0)}%</strong><span>${tr('utilizado')}</span></div>
+      <div class="limit-meta"><span>${tr('restam')} ${(100 - pct).toFixed(0)}%</span><span>${tr('reset em')} ${countdown(limit.resets_at)}${limit.resets_at ? ` · ${formatDate(limit.resets_at)}` : ''}</span></div>
       ${paceMarkup}
     </article>`;
-  }).join('') || '<article class="panel error">A API não retornou janelas de limite ativas.</article>';
+  }).join('') || `<article class="panel error">${tr('A API não retornou janelas de limite ativas.')}</article>`;
 }
 
 function renderWeeklyCurve() {
   const root = document.getElementById('weeklyCurve');
   const summary = document.getElementById('weeklyCurveSummary');
-  const data = state.weeklyData; const slots = selectedProfileSlots(state.profile);
+  const data = state.weeklyData; const slots = selectedProfileSlots(state.profile, data?.startMs);
   if (!data || !Array.isArray(slots) || slots.length !== 168) {
-    root.innerHTML = '<div class="empty">Gere o perfil histórico para visualizar a curva.</div>';
+    root.innerHTML = `<div class="empty">${tr('Gere o perfil histórico para visualizar a curva.')}</div>`;
     summary.textContent = '';
     return;
   }
 
   const elapsedHours = Math.max(0, Math.min(168, (Date.now() - data.startMs) / 36e5));
-  const expectedNow = profileProgress(state.profile, elapsedHours);
+  const expectedNow = profileProgress(state.profile, elapsedHours, data.startMs);
   const hourly = Array(168).fill(0);
   for (const row of data.timeline) {
     const slot = Math.floor((row.bucket_ms - data.startMs) / 36e5);
@@ -208,7 +221,7 @@ function renderWeeklyCurve() {
   const horizontal = [0, 25, 50, 75, 100].map(value =>
     `<g><line x1="${left}" y1="${y(value)}" x2="${width - right}" y2="${y(value)}" class="curve-grid-line"/><text x="${left - 9}" y="${y(value) + 4}" class="curve-axis-label" text-anchor="end">${value}%</text></g>`
   ).join('');
-  const dayFormatter = new Intl.DateTimeFormat('pt-BR', { weekday: 'short' });
+  const dayFormatter = new Intl.DateTimeFormat(locale(), { weekday: 'short' });
   const vertical = Array.from({ length: 8 }, (_, day) => {
     const slot = day * 24; const date = new Date(data.startMs + slot * 36e5);
     return `<g><line x1="${x(slot)}" y1="${top}" x2="${x(slot)}" y2="${height - bottom}" class="curve-day-line"/><text x="${x(slot)}" y="${height - 13}" class="curve-axis-label" text-anchor="${day === 0 ? 'start' : day === 7 ? 'end' : 'middle'}">${dayFormatter.format(date)}</text></g>`;
@@ -227,14 +240,14 @@ function renderWeeklyCurve() {
   </svg>`;
 
   const delta = data.official - expectedNow;
-  summary.innerHTML = `<strong>${data.official.toFixed(0)}%</strong> usado · ideal <strong>${expectedNow.toFixed(0)}%</strong> · <span class="${delta > 0 ? 'negative' : 'positive'}">${delta > 0 ? '+' : ''}${delta.toFixed(0)} pp</span>`;
+  summary.innerHTML = `<strong>${data.official.toFixed(0)}%</strong> ${tr("usado")} · ${tr("ideal")} <strong>${expectedNow.toFixed(0)}%</strong> · <span class="${delta > 0 ? 'negative' : 'positive'}">${delta > 0 ? '+' : ''}${delta.toFixed(0)} pp</span>`;
 }
 
 function renderTimeline() {
   const timeline = document.getElementById('timeline'); const legend = document.getElementById('legend');
   const rows = state.data.timeline;
   const oldAxis = timeline.parentElement.querySelector('.axis'); if (oldAxis) oldAxis.remove();
-  if (!rows.length) { timeline.innerHTML = '<div class="empty">Sem atividade neste intervalo.</div>'; legend.innerHTML = ''; return; }
+  if (!rows.length) { timeline.innerHTML = `<div class="empty">${tr('Sem atividade neste intervalo.')}</div>`; legend.innerHTML = ''; return; }
   legend.innerHTML = TOKEN_COMPONENTS.map(metric => `<span><i style="background:${metric.color}"></i>${metric.label}</span>`).join('');
   const byBucket = new Map();
   for (const row of rows) {
@@ -245,7 +258,7 @@ function renderTimeline() {
   const buckets = [...byBucket.entries()];
   const bucketTotal = values => TOKEN_COMPONENTS.reduce((sum, metric) => sum + values[metric.key], 0);
   const max = Math.max(...buckets.map(([, values]) => bucketTotal(values)), 1);
-  timeline.innerHTML = buckets.map(([bucket, values]) => `<div class="column" title="${formatDate(bucket)} · ${formatTokens(bucketTotal(values))} processados">
+  timeline.innerHTML = buckets.map(([bucket, values]) => `<div class="column" title="${formatDate(bucket)} · ${formatTokens(bucketTotal(values))} ${tr("processados")}">
     ${TOKEN_COMPONENTS.map(metric => `<i class="segment" style="height:${values[metric.key] / max * 100}%;background:${metric.color}" title="${metric.label}: ${exact.format(values[metric.key])}"></i>`).join('')}
   </div>`).join('');
   timeline.insertAdjacentHTML('afterend', `<div class="axis"><span>${formatDate(buckets[0][0])}</span><span>${formatDate(buckets.at(-1)[0])}</span></div>`);
@@ -255,22 +268,31 @@ function renderRanking(id, rows, type) {
   const root = document.getElementById(id); const max = Math.max(...rows.map(x => x.total_tokens), 1);
   root.innerHTML = rows.slice(0, type === 'model' ? 8 : 12).map((row, i) => {
     const name = type === 'model' ? shortModel(row.model) : row.project;
-    const detail = type === 'model' ? `${exact.format(row.messages)} respostas` : `${row.session_id.slice(0, 8)} · ${exact.format(row.messages)} respostas`;
+    const detail = type === 'model' ? `${exact.format(row.messages)} ${tr("respostas")}` : `${row.session_id.slice(0, 8)} · ${exact.format(row.messages)} ${tr("respostas")}`;
     const values = [
-      ['Base perfil', row.fresh_tokens], ['Input', row.input_tokens], ['Output', row.output_tokens],
-      ['Cache escrito', row.cache_creation_tokens], ['Cache lido', row.cache_read_tokens], ['Thinking', row.thinking_tokens],
+      [tr('Base perfil'), row.fresh_tokens], ['Input', row.input_tokens], ['Output', row.output_tokens],
+      [tr('Cache escrito'), row.cache_creation_tokens], [tr('Cache lido'), row.cache_read_tokens], ['Thinking', row.thinking_tokens],
     ];
     return `<div class="rank-row">
-      <div class="rank-summary"><div class="rank-name"><strong>${i + 1}. ${esc(name)}</strong><small title="${esc(type === 'session' ? row.cwd : row.model)}">${esc(detail)}</small></div><div class="rank-value">${formatTokens(row.total_tokens)}<small>processados</small></div></div>
+      <div class="rank-summary"><div class="rank-name"><strong>${i + 1}. ${esc(name)}</strong><small title="${esc(type === 'session' ? row.cwd : row.model)}">${esc(detail)}</small></div><div class="rank-value">${formatTokens(row.total_tokens)}<small>${tr('processados')}</small></div></div>
       <div class="mini-bar"><i style="--value:${row.total_tokens / max * 100}%;background:${COLORS[i % COLORS.length]}"></i></div>
       <div class="metric-breakdown">${values.map(([label, value]) => `<span title="${label}: ${exact.format(value || 0)}"><small>${label}</small><strong>${formatTokens(value)}</strong></span>`).join('')}</div>
     </div>`;
-  }).join('') || '<div class="empty">Sem dados.</div>';
+  }).join('') || `<div class="empty">${tr('Sem dados.')}</div>`;
 }
 
 function shortModel(model) { return model.replace(/^claude-/, '').replace(/-\d{8}$/, ''); }
 function localInputValue(timestamp) { const d = new Date(timestamp - new Date(timestamp).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); }
 
+document.getElementById('language').value = language;
+document.getElementById('language').addEventListener('change', event => {
+  language = event.target.value;
+  try { localStorage.setItem('language', language); } catch {}
+  updateFormatters(); translateStatic();
+  TOKEN_COMPONENTS[2].label = tr('Escrita em cache'); TOKEN_COMPONENTS[3].label = tr('Leitura de cache');
+  if (state.data) { render(); document.getElementById('updated').textContent = state.limits?.fetched_at ? `${tr('Último sync oficial:')} ${new Date(state.limits.fetched_at).toLocaleString(locale())}` : tr('Sem sync oficial'); }
+  else renderPaceMode();
+});
 document.getElementById('paceMode').addEventListener('change', event => {
   state.paceMode = event.target.value === 'equal_weekdays' ? 'equal_weekdays' : 'historical';
   try { localStorage.setItem('paceMode', state.paceMode); } catch {}
@@ -287,4 +309,20 @@ document.getElementById('applyCustom').addEventListener('click', () => {
 });
 document.getElementById('fromInput').value = localInputValue(Date.now() - DURATIONS['5h']);
 document.getElementById('toInput').value = localInputValue(Date.now());
-load(); setInterval(() => load(), 30_000); setInterval(() => { if (state.limits) renderLimits(); }, 60_000);
+let syncTimer;
+function scheduleSync() {
+  clearInterval(syncTimer);
+  const minutes = Number(document.getElementById('syncInterval').value);
+  if (minutes > 0) syncTimer = setInterval(() => load(null, true), minutes * 60_000);
+}
+try {
+  const saved = localStorage.getItem('syncInterval');
+  if (['0', '5', '10', '15', '30'].includes(saved)) document.getElementById('syncInterval').value = saved;
+} catch {}
+document.getElementById('syncInterval').addEventListener('change', event => {
+  try { localStorage.setItem('syncInterval', event.target.value); } catch {}
+  scheduleSync();
+});
+document.getElementById('syncNow').addEventListener('click', () => load(null, true, true));
+load(); scheduleSync();
+setInterval(() => { if (state.limits) { renderLimits(); renderWeeklyCurve(); } }, 60_000);

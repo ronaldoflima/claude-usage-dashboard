@@ -252,16 +252,25 @@ class UsageIndex:
 
 
 class QuotaClient:
-    def __init__(self, claude_dir: Path, ttl_seconds: int = 60):
+    def __init__(self, claude_dir: Path, ttl_seconds: int = 300):
         self.credentials_path = claude_dir / ".credentials.json"
         self.ttl_seconds = ttl_seconds
         self.cached: dict[str, Any] | None = None
         self.cached_at = 0.0
+        self.retry_at = 0.0
+        self.last_error = None
         self.lock = threading.Lock()
 
-    def get(self, force: bool = False) -> dict[str, Any]:
+    def get(self, force: bool = False, cache_only: bool = False) -> dict[str, Any]:
         with self.lock:
             age = time.monotonic() - self.cached_at
+            if cache_only or time.monotonic() < self.retry_at:
+                result = {**self.cached, "cache_age_seconds": round(age)} if self.cached else {
+                    "ok": False, "limits": [], "error": "No cached limits. Use Sync now."}
+                if self.last_error:
+                    result.update(stale=True, error=self.last_error,
+                                  retry_after_seconds=max(0, round(self.retry_at - time.monotonic())))
+                return result
             if self.cached is not None and not force and age < self.ttl_seconds:
                 return {**self.cached, "cache_age_seconds": round(age)}
             try:
@@ -281,10 +290,19 @@ class QuotaClient:
                 normalized = self._normalize(raw)
                 self.cached = {"ok": True, "fetched_at": datetime.now(timezone.utc).isoformat(), **normalized}
                 self.cached_at = time.monotonic()
+                self.last_error = None
+                self.retry_at = 0.0
             except (OSError, KeyError, ValueError, urllib.error.URLError) as error:
+                self.last_error = str(error)
+                delay = self.ttl_seconds
+                if isinstance(error, urllib.error.HTTPError) and error.code == 429:
+                    retry_after = error.headers.get("Retry-After", "") if error.headers else ""
+                    if retry_after.isdigit():
+                        delay = max(delay, int(retry_after))
+                self.retry_at = time.monotonic() + delay
                 if self.cached is not None:
-                    return {**self.cached, "stale": True, "error": str(error), "cache_age_seconds": round(age)}
-                return {"ok": False, "error": str(error), "limits": []}
+                    return {**self.cached, "stale": True, "error": str(error), "cache_age_seconds": round(age), "retry_after_seconds": delay}
+                return {"ok": False, "error": str(error), "limits": [], "retry_after_seconds": delay}
             return {**self.cached, "cache_age_seconds": 0}
 
     @staticmethod
@@ -340,8 +358,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._dashboard(parse_qs(parsed.query))
             return
         if parsed.path == "/api/limits":
-            force = parse_qs(parsed.query).get("force") == ["1"]
-            self._json(self.quota.get(force=force))
+            query = parse_qs(parsed.query)
+            force = query.get("force") == ["1"]
+            self._json(self.quota.get(force=force, cache_only=not force and query.get("sync") != ["1"]))
             return
         if parsed.path == "/api/profile":
             self._profile()
@@ -375,7 +394,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         except ValueError as error:
             self._json({"ok": False, "error": str(error)}, status=400)
             return
-        scan = self.index.refresh()
+        scan = self.index.refresh() if query.get("sync") == ["1"] else None
         result = self.index.dashboard(start_ms, end_ms, bucket_ms)
         self._json({"ok": True, "scan": scan, **result})
 
@@ -390,7 +409,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return 60 * 60_000
 
     def _static(self, path: str) -> None:
-        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/pace-profile.js": "pace-profile.js", "/styles.css": "styles.css"}
+        names = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/i18n.js": "i18n.js", "/pace-profile.js": "pace-profile.js", "/styles.css": "styles.css"}
         name = names.get(path)
         if not name:
             self.send_error(404)

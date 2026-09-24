@@ -15,11 +15,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from app import DEFAULT_CLAUDE_DIR, ROOT, UsageIndex
+from app import DEFAULT_CLAUDE_DIR, ROOT, QuotaClient, UsageIndex
 
 
 WEEK_HOURS = 7 * 24
 WEEKDAY_NAMES = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def account_reset(payload: dict, timezone_name: str) -> datetime:
+    """Read the account-wide weekly reset, never a model-specific window."""
+    if payload.get("ok") and not payload.get("stale"):
+        for limit in payload.get("limits", []):
+            if limit.get("kind") == "weekly_all" and limit.get("resets_at"):
+                reset = datetime.fromisoformat(limit["resets_at"].replace("Z", "+00:00"))
+                if reset.tzinfo is not None:
+                    return reset.astimezone(ZoneInfo(timezone_name))
+    raise ValueError("Account weekly reset unavailable; supply --reset-weekday and --reset-hour explicitly.")
 
 
 def slot_index(local_dt: datetime, reset_weekday: int, reset_hour: int) -> int:
@@ -48,12 +59,13 @@ def build_profile(
     reset_hour: int,
     half_life_days: float,
     metric: str,
+    reset_minute: int = 0,
 ) -> dict:
     tz = ZoneInfo(timezone_name)
     local_now = datetime.now(tz)
     days_since_reset = (local_now.weekday() - reset_weekday) % 7
     training_end = (local_now - timedelta(days=days_since_reset)).replace(
-        hour=reset_hour, minute=0, second=0, microsecond=0
+        hour=reset_hour, minute=reset_minute, second=0, microsecond=0
     )
     if training_end > local_now:
         training_end -= timedelta(days=7)
@@ -117,6 +129,7 @@ def build_profile(
             "reset_weekday": reset_weekday,
             "reset_weekday_name": WEEKDAY_NAMES[reset_weekday],
             "reset_hour": reset_hour,
+            "reset_minute": reset_minute,
             "slots": weights,
             "cumulative": cumulative,
             "weekday_shares": {
@@ -138,14 +151,26 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=ROOT / ".cache" / "usage-profile.json")
     parser.add_argument("--lookback-days", type=int, default=90)
     parser.add_argument("--half-life-days", type=float, default=28)
-    parser.add_argument("--timezone", default="America/Sao_Paulo")
-    parser.add_argument("--reset-weekday", type=int, default=5, help="0=Monday ... 5=Saturday")
-    parser.add_argument("--reset-hour", type=int, default=19)
+    parser.add_argument("--timezone", default="UTC", help="IANA timezone used for weekday patterns (default: UTC)")
+    parser.add_argument("--reset-weekday", type=int, help="Manual override: 0=Monday ... 6=Sunday")
+    parser.add_argument("--reset-hour", type=int, help="Manual override in the selected timezone")
+    parser.add_argument("--reset-minute", type=int, default=None, help="Manual reset minute (default: 0)")
     parser.add_argument("--metric", choices=("fresh_tokens", "total_tokens", "output_tokens"), default="fresh_tokens")
     args = parser.parse_args()
 
-    if not 0 <= args.reset_weekday <= 6 or not 0 <= args.reset_hour <= 23:
-        parser.error("invalid reset weekday/hour")
+    manual = args.reset_weekday is not None or args.reset_hour is not None or args.reset_minute is not None
+    if manual:
+        if args.reset_weekday is None or args.reset_hour is None:
+            parser.error("--reset-weekday and --reset-hour must be supplied together")
+        args.reset_minute = args.reset_minute or 0
+        if not 0 <= args.reset_weekday <= 6 or not 0 <= args.reset_hour <= 23 or not 0 <= args.reset_minute <= 59:
+            parser.error("invalid reset weekday/hour/minute")
+    else:
+        try:
+            reset = account_reset(QuotaClient(args.claude_dir.expanduser()).get(), args.timezone)
+        except ValueError as error:
+            parser.error(str(error))
+        args.reset_weekday, args.reset_hour, args.reset_minute = reset.weekday(), reset.hour, reset.minute
     if args.lookback_days < 14 or args.half_life_days <= 0:
         parser.error("lookback must be >= 14 days and half-life must be positive")
 
@@ -157,6 +182,7 @@ def main() -> None:
         timezone_name=args.timezone,
         reset_weekday=args.reset_weekday,
         reset_hour=args.reset_hour,
+        reset_minute=args.reset_minute,
         half_life_days=args.half_life_days,
         metric=args.metric,
     )

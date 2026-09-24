@@ -1,9 +1,35 @@
 import json
 import tempfile
 import unittest
+import urllib.error
+from unittest.mock import patch
 from pathlib import Path
 
 from app import QuotaClient, UsageIndex
+
+
+class QuotaCacheTest(unittest.TestCase):
+    def test_reload_never_fetches_even_with_empty_or_expired_cache(self):
+        client = QuotaClient(Path('/unused'))
+        with patch('app.urllib.request.urlopen') as request:
+            self.assertFalse(client.get(cache_only=True)['ok'])
+            client.cached = {'ok': True, 'limits': [], 'fetched_at': 'previous'}
+            client.cached_at = -1000
+            self.assertEqual(client.get(cache_only=True)['fetched_at'], 'previous')
+            request.assert_not_called()
+
+    def test_force_respects_429_cooldown_and_preserves_previous_data(self):
+        client = QuotaClient(Path('/unused'))
+        client.cached = {'ok': True, 'limits': [], 'fetched_at': 'previous'}
+        error = urllib.error.HTTPError('https://example.test', 429, 'Too Many Requests', {'Retry-After': '900'}, None)
+        credentials = '{"claudeAiOauth":{"accessToken":"test-token"}}'
+        with patch('pathlib.Path.read_text', return_value=credentials), patch('app.urllib.request.urlopen', side_effect=error) as request:
+            result = client.get(force=True)
+            self.assertTrue(result['stale'])
+            self.assertEqual(result['retry_after_seconds'], 900)
+            self.assertEqual(client.get(force=True)['fetched_at'], 'previous')
+            client.get()
+            self.assertEqual(request.call_count, 1)
 
 
 class UsageIndexTest(unittest.TestCase):

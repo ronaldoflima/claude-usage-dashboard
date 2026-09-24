@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Claude · Ritmo de Uso</title>
+  <title>Claude · Usage Pace</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -14,7 +14,32 @@
         <h1>Ritmo de Uso</h1>
         <p class="subtitle">Limites oficiais e atividade local, sem ler o conteúdo das conversas.</p>
       </div>
-      <div class="status"><span class="pulse"></span><span id="updated">carregando…</span></div>
+      <div class="topbar-actions">
+        <div class="header-toolbar">
+          <div class="status"><span class="pulse" aria-hidden="true"></span><span id="updated">carregando…</span></div>
+          <div class="sync-controls">
+            <span class="compact-select">
+              <select id="syncInterval" data-i18n-aria="Atualização automática" aria-label="Automatic refresh">
+                <option value="0">Manual</option>
+                <option value="5" selected>5 min</option>
+                <option value="10">10 min</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+              </select>
+              <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+            </span>
+            <button id="syncNow" class="icon-button" data-i18n-aria="Sincronizar agora" aria-label="Sync now" title="Sync now">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></svg>
+            </button>
+          </div>
+          <span class="compact-select language-select">
+            <svg class="language-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg>
+            <select id="language" data-i18n-aria="Language" aria-label="Language"><option value="en">English</option><option value="pt-BR">Português</option><option value="es">Español</option></select>
+            <svg class="select-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+          </span>
+        </div>
+        <span id="syncStatus" role="status"></span>
+      </div>
     </header>
 
     <section class="controls panel">
@@ -30,7 +55,7 @@
       </div>
     </section>
 
-    <section class="panel pace-controls" aria-label="Modo do ritmo semanal">
+    <section class="panel pace-controls" data-i18n-aria="Modo do ritmo semanal" aria-label="Weekly pace mode">
       <label for="paceMode">Ritmo semanal</label>
       <select id="paceMode" aria-describedby="paceModeNote">
         <option value="historical">Perfil histórico</option>
@@ -38,7 +63,7 @@
       </select>
       <p id="paceModeNote" class="curve-note" aria-live="polite"></p>
     </section>
-    <section id="limits" class="limit-grid" aria-label="Limites do plano"></section>
+    <section id="limits" class="limit-grid" data-i18n-aria="Limites do plano" aria-label="Plan limits"></section>
 
     <section class="panel weekly-curve-panel">
       <div class="section-head">
@@ -50,7 +75,7 @@
         <span><i class="actual-dot"></i>Uso estimado da semana</span>
         <span><i class="now-dot"></i>Percentual oficial agora</span>
       </div>
-      <div id="weeklyCurve" class="weekly-curve" role="img" aria-label="Curva acumulada de uso semanal"></div>
+      <div id="weeklyCurve" class="weekly-curve" role="img" data-i18n-aria="Curva acumulada de uso semanal" aria-label="Cumulative weekly usage curve"></div>
       <p class="curve-note">A curva pessoal usa somente ciclos encerrados. A linha atual vem dos tokens locais e é calibrada pelo percentual oficial mais recente.</p>
     </section>
 
@@ -93,6 +118,7 @@
 
     <footer><span>Fonte: <code>~/.claude/projects</code> + Anthropic OAuth Usage</span><span id="coverage"></span></footer>
   </main>
+  <script src="/i18n.js"></script>
   <script src="/pace-profile.js"></script>
   <script src="/app.js"></script>
 </body>
